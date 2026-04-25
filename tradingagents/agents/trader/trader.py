@@ -20,8 +20,12 @@ def create_trader(llm, memory):
         if past_memories:
             for i, rec in enumerate(past_memories, 1):
                 past_memory_str += rec["recommendation"] + "\n\n"
-        else:
-            past_memory_str = "No past memories found."
+
+        memory_instruction = (
+            f" Apply lessons from past decisions to strengthen your analysis. Here are reflections from similar situations you traded in and the lessons learned: {past_memory_str.strip()}"
+            if past_memories
+            else ""
+        )
 
         context = {
             "role": "user",
@@ -32,16 +36,14 @@ def create_trader(llm, memory):
             {
                 "role": "system",
                 "content": (
-                    "You are a trading agent analyzing market data to make investment decisions. "
-                    "Based on your analysis, provide a specific recommendation to buy, sell, or hold. "
-                    "End with a firm decision and always conclude your response with "
-                    "'FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation. "
-                    "Apply lessons from past decisions to strengthen your analysis. "
-                    "Here are reflections from similar situations you traded in and the lessons learned: "
-                    f"{past_memory_str}\n\n"
-                    "If the portfolio context indicates a small account, state your position-sizing "
-                    "recommendation as a specific whole number of shares and its total dollar cost — "
-                    "do not give percentage-only sizing."
+                    f"You are a trading agent analyzing market data to make investment decisions. "
+                    f"Based on your analysis, provide a specific recommendation to buy, sell, or hold. "
+                    f"End with a firm decision and always conclude your response with "
+                    f"'FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation."
+                    f"{memory_instruction} "
+                    f"If the portfolio context indicates a small account, state your position-sizing "
+                    f"recommendation as a specific whole number of shares and its total dollar cost — "
+                    f"do not give percentage-only sizing."
                 ),
             },
             context,
