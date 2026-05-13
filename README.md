@@ -53,6 +53,8 @@
 
 </div>
 
+> 📋 **Using this for personal portfolio analysis?** See [PORTFOLIO_SETUP.md](PORTFOLIO_SETUP.md) for first-run setup instructions.
+
 ## TradingAgents Framework
 
 TradingAgents is a multi-agent trading framework that mirrors the dynamics of real-world trading firms. By deploying specialized LLM-powered agents: from fundamental analysts, sentiment experts, and technical analysts, to trader, risk management team, the platform collaboratively evaluates market conditions and informs trading decisions. Moreover, these agents engage in dynamic discussions to pinpoint the optimal strategy.
