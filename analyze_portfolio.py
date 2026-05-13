@@ -17,6 +17,7 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -134,12 +135,12 @@ def main() -> None:
         logger.info("Graded %d signal(s) from previous runs", graded)
 
     cost_tracker = CostTracker()
-    run_cfg.llm_config["callbacks"] = [cost_tracker]
 
     ta = TradingAgentsGraph(
         selected_analysts=run_cfg.selected_analysts,
         debug=False,
         config=run_cfg.llm_config,
+        callbacks=[cost_tracker],
     )
 
     # Phase 5: seed memories from doctrine + past graded signals
@@ -258,6 +259,7 @@ def main() -> None:
             run_timestamp=run_cfg.run_timestamp,
             run_cost_usd=cost_tracker.total_usd,
             rejected_candidates=rejected_candidates or None,
+            regime=macro_snapshot.regime,
         )
 
         bkd = cost_tracker.breakdown()

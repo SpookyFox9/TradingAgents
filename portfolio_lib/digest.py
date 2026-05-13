@@ -19,7 +19,7 @@ def _trailing_stop_value(entry: float, current: Optional[float]) -> Optional[flo
     return None
 
 
-def write_digest(results: list[TickerResult], results_dir: Path, analysis_date: str, skipped: list[tuple[str, str]], cash_balance: float = 0.0, run_timestamp: Optional[str] = None, run_cost_usd: Optional[float] = None, rejected_candidates: Optional[list] = None) -> Path:
+def write_digest(results: list[TickerResult], results_dir: Path, analysis_date: str, skipped: list[tuple[str, str]], cash_balance: float = 0.0, run_timestamp: Optional[str] = None, run_cost_usd: Optional[float] = None, rejected_candidates: Optional[list] = None, regime: Optional[str] = None) -> Path:
     results_dir.mkdir(parents=True, exist_ok=True)
     filename_ts = run_timestamp or analysis_date
     out = results_dir / f"{filename_ts}_SUMMARY.md"
@@ -40,7 +40,7 @@ def write_digest(results: list[TickerResult], results_dir: Path, analysis_date: 
         f"**Total cost basis:** ${total_cost:,.2f}  ",
         f"**Cash balance:** ${cash_balance:,.2f}  ",
         f"**Total account value (cost basis + cash):** ${total_value:,.2f}  ",
-        f"**Market regime:** `<fill in manually>`",
+        f"**Market regime:** `{regime or 'unknown'}`",
         f"**Run cost:** ${run_cost_usd:.4f}" if run_cost_usd is not None else "**Run cost:** n/a",
         "",
         "---",
