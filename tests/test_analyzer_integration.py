@@ -50,7 +50,7 @@ def test_analyze_ticker_returns_result():
         analysis_date="2026-05-04",
         kind=TickerKind.HOLDING,
         entry=100.0,
-        shares=1.0,
+        shares=2.0,
         target=None,
     )
 
@@ -71,7 +71,7 @@ def test_analyze_ticker_captures_full_state():
         analysis_date="2026-05-04",
         kind=TickerKind.HOLDING,
         entry=100.0,
-        shares=1.0,
+        shares=2.0,
         target=None,
     )
 

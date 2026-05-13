@@ -31,8 +31,8 @@ def _make_result(ticker, kind, decision, entry=100.0, shares=1.0, target=None, a
 @pytest.fixture
 def results():
     return [
-        _make_result("NVDA", TickerKind.HOLDING, "UNDERWEIGHT", entry=100.0, shares=1.0),
-        _make_result("GME", TickerKind.HOLDING, "SELL", entry=50.0, shares=45.0),
+        _make_result("NVDA", TickerKind.HOLDING, "UNDERWEIGHT", entry=100.0, shares=2.0),
+        _make_result("GME", TickerKind.HOLDING, "SELL", entry=50.0, shares=10.0),
         _make_result("BRO", TickerKind.WATCHLIST, "BUY", entry=None, shares=0.0, target=65.0),
     ]
 

@@ -1,0 +1,25 @@
+{
+  "owner": "Your Name",
+  "last_updated": "2024-01-01",
+  "cash_balance": 0.00,
+  "holdings": [
+    {
+      "ticker": "AAPL",
+      "entry": 150.00,
+      "shares": 10.0,
+      "acquired_date": "2024-01-01"
+    },
+    {
+      "ticker": "MSFT",
+      "entry": 300.00,
+      "shares": 5.0,
+      "acquired_date": "2024-02-01"
+    }
+  ],
+  "open_orders": [],
+  "watch_list": ["NVDA", "META"],
+  "targets": {
+    "NVDA": 100.00
+  },
+  "strategy": "Describe your investing strategy here"
+}

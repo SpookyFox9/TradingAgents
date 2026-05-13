@@ -12,7 +12,7 @@ class InvestorPersona:
     response_structure: str
 
 
-_PERSONA_TEXT_PATH = Path(__file__).resolve().parent.parent.parent / "Investor_Persona.md"
+_PERSONA_TEXT_PATH = Path(__file__).resolve().parent.parent / "Investor_Persona.md"
 
 
 def _load_raw() -> str:
@@ -25,7 +25,7 @@ def _load_raw() -> str:
 DEFAULT_PERSONA = InvestorPersona(
     name="Senior Investment Strategist",
     style="GARP (Growth at a Reasonable Price) with AI infrastructure concentration (Barbell Architecture)",
-    time_horizon="Long-term (12–24+ months); full-engine configuration since 2026-05-13 (Risk-On regime, shields fully rotated out); re-deploy shields on sustained Risk-Off signal",
+    time_horizon="Long-term (12–24+ months)",
     red_flags=[
         "Rising debt without revenue acceleration",
         "Falling FCF margin (free cash flow ÷ revenue) — signals moat erosion",

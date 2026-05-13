@@ -76,6 +76,10 @@ def main() -> None:
         "--discover", type=int, metavar="N",
         help="Discover N new GARP candidates via two-pass AI infra screen (e.g. --discover 3)",
     )
+    parser.add_argument(
+        "--portfolio", metavar="PATH",
+        help="Path to portfolio.json (default: portfolio.json in the TradingAgents directory)",
+    )
     args = parser.parse_args()
 
     if args.av:
@@ -101,6 +105,7 @@ def main() -> None:
         use_alpha_vantage=args.av,
         deep_mode=args.deep,
         analyst_preset=args.analyst_set,
+        portfolio_path=Path(args.portfolio) if args.portfolio else None,
     )
     portfolio = load_portfolio(run_cfg.portfolio_path)
 

@@ -6,7 +6,7 @@ from typing import Sequence
 
 from tradingagents.default_config import DEFAULT_CONFIG
 
-_BASE = Path(__file__).resolve().parent.parent.parent
+_BASE = Path(__file__).resolve().parent.parent
 
 # Analyst preset names → analyst list passed to TradingAgentsGraph
 ANALYST_PRESETS: dict[str, list[str]] = {
@@ -37,6 +37,7 @@ class RunConfig:
         use_alpha_vantage: bool = False,
         deep_mode: bool = False,
         analyst_preset: str = "quality",
+        portfolio_path: Path | None = None,
     ) -> "RunConfig":
         debate_rounds = 2 if deep_mode else 1
         llm_config = {
@@ -58,11 +59,12 @@ class RunConfig:
             "extra_instrument_context": "",
         }
         now = datetime.now()
+        resolved_portfolio = portfolio_path or (_BASE / "portfolio.json")
         return cls(
             analysis_date=now.strftime("%Y-%m-%d"),
             run_timestamp=now.strftime("%Y-%m-%d_%H%M"),
-            portfolio_path=_BASE / "portfolio.json",
-            results_dir=_BASE / "Analysis",
+            portfolio_path=resolved_portfolio,
+            results_dir=resolved_portfolio.parent / "Analysis",
             use_alpha_vantage=use_alpha_vantage,
             deep_mode=deep_mode,
             analyst_preset=analyst_preset,

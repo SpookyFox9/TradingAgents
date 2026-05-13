@@ -8,8 +8,8 @@ from portfolio_lib.loader import load_portfolio, iter_holdings, iter_watchlist
 def valid_portfolio_file(tmp_path: Path) -> Path:
     data = {
         "holdings": [
-            {"ticker": "NVDA", "entry": 100.0, "shares": 1.0},
-            {"ticker": "GME", "entry": 50.0, "shares": 45.0},
+            {"ticker": "NVDA", "entry": 100.0, "shares": 2.0},
+            {"ticker": "GME", "entry": 50.0, "shares": 10.0},
             {"ticker": "GMEWS", "entry": 0.0, "shares": 4.0},
         ],
         "watch_list": ["BRO", "BAC"],
@@ -26,7 +26,7 @@ def test_load_portfolio_parses_holdings(valid_portfolio_file):
     assert len(p.holdings) == 3
     nvda = next(h for h in p.holdings if h.ticker == "NVDA")
     assert nvda.entry == pytest.approx(100.0)
-    assert nvda.shares == 1.0
+    assert nvda.shares == 2.0
 
 
 def test_load_portfolio_parses_watchlist(valid_portfolio_file):

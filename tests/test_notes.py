@@ -4,7 +4,7 @@ from portfolio_lib.notes import get_holding_notes, get_watchlist_notes
 def test_gme_intentional_hold_note():
     notes = get_holding_notes("GME")
     assert any("INTENTIONAL" in n.upper() for n in notes)
-    assert any("Dec 2026" in n for n in notes)
+    assert any("year-end" in n for n in notes)
 
 
 def test_gmews_has_note():
