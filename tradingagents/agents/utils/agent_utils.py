@@ -35,12 +35,21 @@ def get_language_instruction() -> str:
 
 
 def build_instrument_context(ticker: str) -> str:
-    """Describe the exact instrument so agents preserve exchange-qualified tickers."""
-    return (
+    """Describe the exact instrument so agents preserve exchange-qualified tickers.
+
+    Appends optional investor persona, portfolio state, and macro regime blocks
+    when ``extra_instrument_context`` is set in the dataflows config.
+    """
+    from tradingagents.dataflows.config import get_config
+    base = (
         f"The instrument to analyze is `{ticker}`. "
         "Use this exact ticker in every tool call, report, and recommendation, "
         "preserving any exchange suffix (e.g. `.TO`, `.L`, `.HK`, `.T`)."
     )
+    extra = get_config().get("extra_instrument_context", "")
+    if extra:
+        return f"{base}\n\n{extra}"
+    return base
 
 def create_msg_delete():
     def delete_messages(state):
