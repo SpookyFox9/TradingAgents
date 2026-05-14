@@ -78,10 +78,17 @@ def main() -> None:
         help="Discover N new GARP candidates via two-pass AI infra screen (e.g. --discover 3)",
     )
     parser.add_argument(
+        "--discover-only", action="store_true", dest="discover_only",
+        help="Skip holdings/watchlist analysis; run discovery pass only (requires --discover N)",
+    )
+    parser.add_argument(
         "--portfolio", metavar="PATH",
         help="Path to portfolio.json (default: portfolio.json in the TradingAgents directory)",
     )
     args = parser.parse_args()
+
+    if args.discover_only and not args.discover:
+        parser.error("--discover-only requires --discover N (e.g. --discover-only --discover 3)")
 
     if args.av:
         logger.warning("Alpha Vantage enabled — technical indicator calls will count toward 25/day quota.")
@@ -149,7 +156,7 @@ def main() -> None:
     results = []
     skipped: list[tuple[str, str]] = []
 
-    if not args.watchlist:
+    if not args.watchlist and not args.discover_only:
         for h in portfolio.holdings:
             if h.entry == 0.0:
                 skipped.append((h.ticker, "warrant/special security — no entry price"))
@@ -181,7 +188,7 @@ def main() -> None:
                 logger.error("Failed to analyze %s: %s", ticker, exc, exc_info=True)
                 skipped.append((ticker, f"ERROR: {exc}"))
 
-    else:
+    elif args.watchlist:
         for ticker, target in iter_watchlist(portfolio):
             if tickers_filter and ticker not in tickers_filter:
                 continue
@@ -208,7 +215,7 @@ def main() -> None:
 
     # ── Discovery pass (optional) ──────────────────────────────────────────────
     all_candidates = []
-    if args.discover and not args.watchlist:
+    if args.discover and (not args.watchlist or args.discover_only):
         held_tickers = [h.ticker for h in portfolio.holdings]
         print(f"\nDiscovering {args.discover} candidates "
               f"(layer gaps analysed · {macro_snapshot.regime} regime)...")

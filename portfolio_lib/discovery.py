@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import yfinance as yf
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
@@ -41,13 +42,18 @@ TICKER_LAYERS: dict[str, str] = {
 }
 
 
+# ── Validation ────────────────────────────────────────────────────────────────
+
+_TICKER_RE = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
+_MAX_RATIONALE_LEN = 500
+
 # ── Data structures ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CandidateResult:
     ticker: str
     rationale: str   # pass 1 reasoning
-    metrics: dict    # live yfinance data — may be empty on fetch failure
+    metrics: dict[str, Any]  # live yfinance data — may be empty on fetch failure
     verdict: str     # pass 2 verdict
     passed: bool
 
@@ -77,7 +83,7 @@ def _fetch_garp_metrics(ticker: str) -> dict[str, Any]:
             "rev_growth": info.get("revenueGrowth"),
         }
     except Exception as exc:
-        logger.debug("Metrics fetch failed for %s: %s", ticker, exc)
+        logger.warning("Metrics fetch failed for %s: %s", ticker, exc)
         return {}
 
 
@@ -122,8 +128,7 @@ def _parse_json_list(text: str, key_check: str) -> list[dict]:
     return []
 
 
-def _build_llm(model: str, callbacks: list):
-    from langchain_anthropic import ChatAnthropic
+def _build_llm(model: str, callbacks: list[Any]) -> ChatAnthropic:
     kwargs: dict[str, Any] = {"model": model}
     if callbacks:
         kwargs["callbacks"] = callbacks
@@ -192,18 +197,26 @@ def suggest_tickers(
         logger.warning("Discovery pass 1 returned no parseable candidates — aborting")
         return []
 
-    print(f"  Pass 1 [Haiku]   → {len(raw_candidates)} raw candidates: "
+    print(f"  Pass 1 [Haiku]   -> {len(raw_candidates)} raw candidates: "
           f"{', '.join(c['ticker'].upper() for c in raw_candidates)}")
 
     # ── Data fetch ─────────────────────────────────────────────────────────────
 
     enriched: list[dict] = []
     for c in raw_candidates:
-        ticker  = c["ticker"].upper()
+        ticker = c["ticker"].strip().upper()
+        if not _TICKER_RE.match(ticker):
+            logger.warning("Discovery pass 1 rejected malformed ticker: %r", ticker)
+            continue
+        rationale = str(c.get("rationale", "")).strip()[:_MAX_RATIONALE_LEN]
         metrics = _fetch_garp_metrics(ticker)
-        enriched.append({"ticker": ticker, "rationale": c.get("rationale", ""), "metrics": metrics})
+        enriched.append({"ticker": ticker, "rationale": rationale, "metrics": metrics})
 
-    print(f"  Metrics fetched  → {', '.join(c['ticker'] for c in enriched)}")
+    if not enriched:
+        logger.warning("Discovery pass 1 produced no valid tickers after sanitization — aborting")
+        return []
+
+    print(f"  Metrics fetched  -> {', '.join(c['ticker'] for c in enriched)}")
 
     # ── Pass 2: Challenge ──────────────────────────────────────────────────────
 
@@ -274,7 +287,7 @@ def suggest_tickers(
         results  = [forced] + results[1:]
         survivors, cuts = [forced], results[1:]
 
-    print(f"  Pass 2 [Sonnet]  → {len(survivors)} PASS, {len(cuts)} CUT")
+    print(f"  Pass 2 [Sonnet]  -> {len(survivors)} PASS, {len(cuts)} CUT")
     for r in survivors:
         m = r.metrics
         tag = (f"PEG {_fmt_ratio(m.get('peg'))} | "
