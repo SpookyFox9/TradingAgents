@@ -156,24 +156,47 @@ def main() -> None:
     results = []
     skipped: list[tuple[str, str]] = []
 
-    if not args.watchlist and not args.discover_only:
+    # Determine which tickers to analyze from each pool.
+    # When --watchlist + --tickers are both given, route each ticker to the
+    # correct branch (holding vs watchlist) rather than filtering one pool only.
+    _holding_ticker_set = {h.ticker for h in portfolio.holdings if h.entry > 0}
+    _watchlist_ticker_set = {t for t, _ in iter_watchlist(portfolio)}
+
+    if args.watchlist and tickers_filter:
+        unknown = tickers_filter - _holding_ticker_set - _watchlist_ticker_set
+        if unknown:
+            logger.warning(
+                "Ticker(s) not found in holdings or watchlist, skipping: %s",
+                ", ".join(sorted(unknown)),
+            )
+        run_holdings = tickers_filter & _holding_ticker_set
+        run_watchlist = tickers_filter & _watchlist_ticker_set
+    elif args.watchlist:
+        run_holdings = set()
+        run_watchlist = _watchlist_ticker_set
+    elif not args.discover_only:
+        run_holdings = tickers_filter if tickers_filter is not None else _holding_ticker_set
+        run_watchlist = set()
+    else:
+        run_holdings = set()
+        run_watchlist = set()
+
+    if run_holdings:
         for h in portfolio.holdings:
             if h.entry == 0.0:
                 skipped.append((h.ticker, "warrant/special security — no entry price"))
 
         for holding in iter_holdings(portfolio):
-            ticker = holding.ticker
-            if tickers_filter and ticker not in tickers_filter:
+            if holding.ticker not in run_holdings:
                 continue
 
-            # Phase 1: build per-ticker extra context and inject into config
-            extra_ctx = _build_extra_context(portfolio, prices, ticker, macro_snapshot)
+            extra_ctx = _build_extra_context(portfolio, prices, holding.ticker, macro_snapshot)
             run_cfg.llm_config["extra_instrument_context"] = extra_ctx
 
             try:
                 result = analyze_ticker(
                     ta=ta,
-                    ticker=ticker,
+                    ticker=holding.ticker,
                     analysis_date=run_cfg.analysis_date,
                     kind=TickerKind.HOLDING,
                     entry=holding.entry,
@@ -185,12 +208,12 @@ def main() -> None:
                 write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
                 results.append(result)
             except Exception as exc:
-                logger.error("Failed to analyze %s: %s", ticker, exc, exc_info=True)
-                skipped.append((ticker, f"ERROR: {exc}"))
+                logger.error("Failed to analyze %s: %s", holding.ticker, exc, exc_info=True)
+                skipped.append((holding.ticker, f"ERROR: {exc}"))
 
-    elif args.watchlist:
+    if run_watchlist:
         for ticker, target in iter_watchlist(portfolio):
-            if tickers_filter and ticker not in tickers_filter:
+            if ticker not in run_watchlist:
                 continue
 
             extra_ctx = _build_extra_context(portfolio, prices, ticker, macro_snapshot)

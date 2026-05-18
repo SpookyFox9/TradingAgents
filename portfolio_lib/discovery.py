@@ -152,7 +152,7 @@ def suggest_tickers(
     from portfolio_lib.macro import render as render_macro
 
     callbacks    = llm_config.get("callbacks", [])
-    haiku_model  = llm_config.get("quick_think_llm", "claude-haiku-4-5-20251001")
+    haiku_model  = llm_config.get("quick_think_llm", "claude-haiku-4-5")
     sonnet_model = llm_config.get("deep_think_llm", "claude-sonnet-4-6")
 
     llm_quick = _build_llm(haiku_model, callbacks)

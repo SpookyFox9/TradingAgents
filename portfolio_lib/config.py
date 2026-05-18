@@ -44,7 +44,7 @@ class RunConfig:
             **DEFAULT_CONFIG,
             "llm_provider": "anthropic",
             "deep_think_llm": "claude-sonnet-4-6",
-            "quick_think_llm": "claude-haiku-4-5-20251001",
+            "quick_think_llm": "claude-haiku-4-5",
             "anthropic_effort": None,  # effort param not supported on claude-sonnet-4-6
             "backend_url": None,
             "max_debate_rounds": debate_rounds,
