@@ -210,6 +210,7 @@ def main() -> None:
                 stage_pending_order(
                     ticker=result.ticker,
                     decision=result.decision,
+                    kind=result.kind,
                     cash_balance=portfolio.cash_balance,
                     current_price=prices.get(result.ticker),
                     target_price=None,
@@ -244,6 +245,7 @@ def main() -> None:
                 stage_pending_order(
                     ticker=result.ticker,
                     decision=result.decision,
+                    kind=result.kind,
                     cash_balance=portfolio.cash_balance,
                     current_price=get_price(result.ticker),
                     target_price=target,

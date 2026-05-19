@@ -69,6 +69,7 @@ def _has_alpaca_keys() -> bool:
 def stage_pending_order(
     ticker: str,
     decision: str,
+    kind: str,
     cash_balance: float,
     current_price: Optional[float],
     target_price: Optional[float],
@@ -80,9 +81,16 @@ def stage_pending_order(
     Paper + ALPACA_AUTO_EXECUTE=true (default): submits immediately to Alpaca.
     Live or auto-execute disabled: writes to pending_orders.json for manual review.
     Skips silently if a pending order already exists for this ticker.
+    SELL/UNDERWEIGHT signals are ignored for WATCHLIST and CANDIDATE tickers
+    (no position to sell).
     """
     decision_upper = decision.strip().upper()
     if decision_upper not in ACTIONABLE:
+        return
+
+    kind_upper = kind.upper() if isinstance(kind, str) else str(kind).split(".")[-1].upper()
+    if decision_upper in ACTIONABLE_SELL and kind_upper in ("WATCHLIST", "CANDIDATE"):
+        logger.info("Skipping SELL signal for %s — not a held position (%s)", ticker, kind_upper)
         return
 
     action = "BUY" if decision_upper in ACTIONABLE_BUY else "SELL"
