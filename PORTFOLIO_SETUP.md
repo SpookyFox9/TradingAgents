@@ -81,7 +81,12 @@ Open `portfolio.json` and replace the placeholder values with your actual holdin
       "ticker": "AAPL",           // stock ticker symbol (uppercase)
       "entry": 150.00,            // your average cost basis per share
       "shares": 10.0,             // number of shares held
-      "acquired_date": "2024-01-15"  // optional, ISO format YYYY-MM-DD
+      "acquired_date": "2024-01-15", // optional, ISO format YYYY-MM-DD
+      "role": "tax-loss-harvest"    // optional — skips LLM analysis; prints a
+                                    // harvest status block (P/L, open orders,
+                                    // wash-sale reminder, spike alert) instead
+                                    // of a trade signal. Useful for underwater
+                                    // positions held intentionally for tax purposes.
     }
     // add one object per holding
   ],
@@ -152,7 +157,7 @@ Reports are written to `Analysis/` (created automatically next to your `portfoli
 |------|----------|
 | `YYYY-MM-DD_HHmm_TICKER.md` | Full per-ticker report — decision, all agent reasoning, trailing stop |
 | `YYYY-MM-DD_HHmm_SUMMARY.md` | Digest — decisions table, action items, signal track record |
-| `signal_log.jsonl` | Append-only record of every signal for automatic grading |
+| `signal_log.jsonl` | Append-only signal record. BUY/SELL signals grade after 14 days; HOLD after 30. Rolling hit-rate appears in the next run's summary digest under "Signal Track Record". |
 | `cost_log.jsonl` | Token usage and USD cost per run (per-model breakdown) |
 
 ---
@@ -209,3 +214,105 @@ Either copy `portfolio.json.example` to `portfolio.json` inside `TradingAgents/`
 
 **`Activate.ps1 cannot be loaded` (Windows)**
 Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` in PowerShell as Administrator, then try activating again.
+
+---
+
+## 9. Keeping the fork up to date
+
+When TauricResearch releases a new version, pull it into your fork:
+
+```bash
+# First time only — add the upstream remote
+git remote add upstream https://github.com/TauricResearch/TradingAgents.git
+
+# Pull in upstream changes
+git fetch upstream
+git merge upstream/main
+```
+
+Before merging, skim the release notes. Upstream occasionally changes `tradingagents/default_config.py` or agent prompts in ways that affect pipeline behavior. If you have local customizations to those files, review the diff before accepting (`git diff upstream/main -- tradingagents/default_config.py`).
+
+---
+
+## 10. Optional: personal config repo
+
+If you want version control for your personal files — portfolio history, investor persona, and an AI context file — create a small private repo alongside TradingAgents.
+
+### Why bother
+
+- **History**: `git log` on `portfolio.json` shows exactly when you entered and exited positions
+- **Backup**: restore your full setup on a new machine with two clones
+- **Claude Code**: a `CLAUDE.md` file gives the AI your investment doctrine so every session starts with full context (only relevant if you use [Claude Code](https://claude.ai/code))
+
+### Recommended layout
+
+Keep the two repos side by side, not nested:
+
+```
+~/repos/
+├── my-portfolio/          ← your new private repo
+│   ├── portfolio.json
+│   ├── Investor_Persona.md
+│   ├── CLAUDE.md          ← optional, only if using Claude Code
+│   └── run_analysis.sh    ← optional convenience wrapper (see below)
+└── TradingAgents/         ← this repo
+```
+
+### Setup
+
+```bash
+mkdir ~/repos/my-portfolio && cd ~/repos/my-portfolio
+git init
+
+# copy your portfolio.json and Investor_Persona.md here
+cp ~/repos/TradingAgents/portfolio.json.example portfolio.json
+# edit portfolio.json with your actual holdings
+
+git add portfolio.json
+git commit -m "init: personal portfolio config"
+
+# push to a new private GitHub repo (requires gh CLI)
+gh repo create my-portfolio --private --source=. --push
+```
+
+### Running analysis with a separate portfolio
+
+Use the `--portfolio` flag to point at your config:
+
+```bash
+# Mac / Linux
+python ~/repos/TradingAgents/analyze_portfolio.py \
+  --portfolio ~/repos/my-portfolio/portfolio.json
+
+# Windows (PowerShell)
+python "$HOME\repos\TradingAgents\analyze_portfolio.py" `
+  --portfolio "$HOME\repos\my-portfolio\portfolio.json"
+```
+
+### Convenience wrapper script
+
+To avoid typing the full path every day, drop a wrapper script in your portfolio repo:
+
+```bash
+#!/usr/bin/env bash
+# run_analysis.sh (Mac / Linux) — chmod +x run_analysis.sh
+python "$(dirname "$0")/../TradingAgents/analyze_portfolio.py" \
+  --portfolio "$(dirname "$0")/portfolio.json" "$@"
+```
+
+```powershell
+# run_analysis.ps1 (Windows PowerShell)
+python "$PSScriptRoot\..\TradingAgents\analyze_portfolio.py" `
+  --portfolio "$PSScriptRoot\portfolio.json" @args
+```
+
+Then just run `./run_analysis.sh --deep` (or `.\run_analysis.ps1 --deep`) from anywhere, passing any flags through.
+
+### What to gitignore
+
+Add this to `.gitignore` in your portfolio repo:
+
+```
+Analysis/     # output reports — large and dated, keep local only
+.env          # API keys — never commit
+```

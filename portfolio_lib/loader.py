@@ -10,11 +10,24 @@ _REQUIRED_HOLDING_KEYS = {"ticker", "entry", "shares"}
 
 
 @dataclass(frozen=True)
+class OpenOrder:
+    ticker: str
+    side: str
+    type: str
+    price: float
+    shares: float
+
+
+@dataclass(frozen=True)
 class Holding:
     ticker: str
     entry: float
     shares: float
     acquired_date: Optional[str] = None
+    role: Optional[str] = None
+    harvest_target_date: Optional[str] = None
+    lot_method: Optional[str] = None
+    wash_sale_lockout_days: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -24,6 +37,7 @@ class Portfolio:
     targets: dict[str, float]
     strategy: str
     cash_balance: float = 0.0
+    open_orders: tuple[OpenOrder, ...] = ()
 
 
 def load_portfolio(path: Path) -> Portfolio:
@@ -35,11 +49,26 @@ def load_portfolio(path: Path) -> Portfolio:
         missing = _REQUIRED_HOLDING_KEYS - h.keys()
         if missing:
             raise ValueError(f"Holding[{i}] missing keys: {missing}")
+        lockout = h.get("wash_sale_lockout_days")
         holdings.append(Holding(
             ticker=h["ticker"],
             entry=float(h["entry"]),
             shares=float(h["shares"]),
             acquired_date=h.get("acquired_date"),
+            role=h.get("role"),
+            harvest_target_date=h.get("harvest_target_date"),
+            lot_method=h.get("lot_method"),
+            wash_sale_lockout_days=int(lockout) if lockout is not None else None,
+        ))
+
+    open_orders = []
+    for o in raw.get("open_orders", []):
+        open_orders.append(OpenOrder(
+            ticker=o["ticker"],
+            side=o["side"],
+            type=o["type"],
+            price=float(o["price"]),
+            shares=float(o["shares"]),
         ))
 
     return Portfolio(
@@ -48,6 +77,7 @@ def load_portfolio(path: Path) -> Portfolio:
         targets={k: float(v) for k, v in raw.get("targets", {}).items()},
         strategy=raw.get("strategy", ""),
         cash_balance=float(raw.get("cash_balance", 0.0)),
+        open_orders=tuple(open_orders),
     )
 
 

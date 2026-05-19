@@ -59,6 +59,67 @@ def _build_extra_context(portfolio, prices: dict, active_ticker: str, macro_snap
     return "\n".join(parts)
 
 
+def _print_tax_loss_status(holding, portfolio, prices: dict) -> None:
+    """Print tax-loss harvest status for GME-role holdings instead of running the LLM pipeline."""
+    import datetime
+
+    from portfolio_lib.prices import get_price
+
+    current_price = prices.get(holding.ticker) or get_price(holding.ticker)
+    if not current_price:
+        print(f"\n{holding.ticker} [TAX-LOSS HARVEST] — could not fetch current price\n")
+        return
+
+    entry = holding.entry
+    shares = holding.shares
+    loss_per_share = current_price - entry
+    total_unrealized = loss_per_share * shares
+    loss_pct = (loss_per_share / entry) * 100
+
+    today = datetime.date.today()
+    harvest_start = datetime.date(2026, 11, 15)
+    harvest_end = datetime.date(2026, 12, 20)
+    in_window = harvest_start <= today <= harvest_end
+
+    gme_orders = [o for o in portfolio.open_orders if o.ticker == holding.ticker]
+
+    spike_detected = False
+    low_30d = 0.0
+    try:
+        import yfinance as yf
+        hist = yf.Ticker(holding.ticker).history(period="30d")
+        if not hist.empty:
+            low_30d = float(hist["Low"].min())
+            spike_detected = current_price > 2.0 * low_30d
+    except Exception:
+        pass
+
+    print(f"\n{'='*60}")
+    print(f"{holding.ticker}  [TAX-LOSS HARVEST] — intentional hold, no trade signal")
+    print("=" * 60)
+    print(f"  Current price  : ${current_price:.2f}")
+    print(f"  Entry price    : ${entry:.2f}")
+    print(f"  Unrealized P/L : ${total_unrealized:,.2f}  ({loss_pct:.1f}%)")
+    print(f"  Shares held    : {shares:.0f}")
+    if holding.harvest_target_date:
+        print(f"  Harvest target : {holding.harvest_target_date}")
+    lot_note = holding.lot_method or "highest-cost-first"
+    print(f"  Lot method     : {lot_note} (confirm at broker)")
+    lockout = holding.wash_sale_lockout_days or 30
+    print(f"  Wash-sale rule : {lockout}-day re-entry lockout after any fill")
+    harvest_status = "ACTIVE — execute harvest this month" if in_window else f"not yet (opens {harvest_start})"
+    print(f"  Harvest window : Nov 15 – Dec 20 2026 [{harvest_status}]")
+    if gme_orders:
+        for o in gme_orders:
+            print(f"  Open order     : {o.shares:.0f}sh {o.side} {o.type} @ ${o.price:.2f}")
+    else:
+        print(f"  Open orders    : none — consider placing harvest limit order")
+    if spike_detected and low_30d:
+        print(f"\n  *** SPIKE ALERT: ${current_price:.2f} is >2x the 30-day low (${low_30d:.2f}).")
+        print(f"      Consider harvesting remaining shares early at reduced loss.")
+    print()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run multi-agent analysis on your portfolio.")
     parser.add_argument("--tickers", nargs="+", metavar="TICKER", help="Limit to these tickers")
@@ -189,6 +250,10 @@ def main() -> None:
 
         for holding in iter_holdings(portfolio):
             if holding.ticker not in run_holdings:
+                continue
+
+            if holding.role == "tax-loss-harvest":
+                _print_tax_loss_status(holding, portfolio, prices)
                 continue
 
             extra_ctx = _build_extra_context(portfolio, prices, holding.ticker, macro_snapshot)
