@@ -36,9 +36,9 @@ def _check_env() -> None:
     if not key:
         print(
             "\nERROR: ANTHROPIC_API_KEY is not set.\n"
-            "  1. Copy TradingAgents\\.env.example to TradingAgents\\.env\n"
-            "  2. Add your Anthropic API key\n"
-            "  See SETUP.md for full instructions.\n"
+            "  Set it as a Windows User environment variable:\n"
+            '  [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-...", "User")\n'
+            "  Then re-open your terminal and rerun.\n"
         )
         sys.exit(1)
 
