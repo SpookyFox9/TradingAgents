@@ -41,7 +41,7 @@ def main() -> None:
         mode += " [DRY RUN — no orders will be submitted]"
 
     print(f"\nPending orders ({len(orders)}) — Mode: {mode}")
-    print("─" * 64)
+    print("-" * 64)
     for i, o in enumerate(orders, 1):
         created = o["created_at"][:16].replace("T", " ")
         expires = o["expires_at"][:16].replace("T", " ")
@@ -55,7 +55,7 @@ def main() -> None:
         print(f"      Signal: {o['signal']}  |  Created: {created}  |  Expires: {expires}")
         if o.get("report_path"):
             print(f"      Report:  {o['report_path']}")
-    print("\n" + "─" * 64)
+    print("\n" + "-" * 64)
     print("  Commands: y=approve  n=reject  shares=N=custom qty  q=quit\n")
 
     for i, order in enumerate(orders, 1):
@@ -86,6 +86,9 @@ def main() -> None:
             if raw.startswith("shares="):
                 try:
                     qty = float(raw.split("=", 1)[1])
+                    if qty <= 0 or qty > 500:
+                        print("      Quantity out of safe range (1-500) — re-enter.\n")
+                        continue
                     result = submit_order(order, qty, run_cfg.results_dir)
                     alpaca_id = result.get("alpaca_order_id", "n/a")
                     print(f"      Submitted {qty} shares — Alpaca id: {alpaca_id}\n")

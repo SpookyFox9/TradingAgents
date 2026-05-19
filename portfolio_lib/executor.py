@@ -10,6 +10,7 @@ Usage:
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -84,6 +85,11 @@ def stage_pending_order(
     SELL/UNDERWEIGHT signals are ignored for WATCHLIST and CANDIDATE tickers
     (no position to sell).
     """
+    ticker = ticker.strip().upper()
+    if not re.fullmatch(r"[A-Z]{1,5}", ticker):
+        logger.warning("Invalid ticker symbol %r — skipping", ticker)
+        return
+
     decision_upper = decision.strip().upper()
     if decision_upper not in ACTIONABLE:
         return
