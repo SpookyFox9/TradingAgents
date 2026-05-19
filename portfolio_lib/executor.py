@@ -45,6 +45,27 @@ def _save_orders(path: Path, orders: list[dict]) -> None:
     path.write_text(json.dumps(orders, indent=2), encoding="utf-8")
 
 
+def _is_paper() -> bool:
+    return os.environ.get("ALPACA_PAPER", "true").strip().lower() != "false"
+
+
+def _auto_execute_enabled() -> bool:
+    """Auto-execute defaults to True on paper, False on live. Override via ALPACA_AUTO_EXECUTE."""
+    explicit = os.environ.get("ALPACA_AUTO_EXECUTE", "").strip().lower()
+    if explicit in ("true", "1"):
+        return True
+    if explicit in ("false", "0"):
+        return False
+    return _is_paper()  # default: auto on paper, manual on live
+
+
+def _has_alpaca_keys() -> bool:
+    return bool(
+        os.environ.get("ALPACA_API_KEY", "").strip()
+        and os.environ.get("ALPACA_API_SECRET", "").strip()
+    )
+
+
 def stage_pending_order(
     ticker: str,
     decision: str,
@@ -54,8 +75,10 @@ def stage_pending_order(
     report_path: Optional[Path],
     results_dir: Path,
 ) -> None:
-    """Write a pending order to pending_orders.json if the signal is actionable.
+    """Stage or auto-execute an order depending on paper/live mode.
 
+    Paper + ALPACA_AUTO_EXECUTE=true (default): submits immediately to Alpaca.
+    Live or auto-execute disabled: writes to pending_orders.json for manual review.
     Skips silently if a pending order already exists for this ticker.
     """
     decision_upper = decision.strip().upper()
@@ -89,16 +112,32 @@ def stage_pending_order(
         "report_path": str(report_path) if report_path else None,
     }
 
-    pending_path = _pending_path(results_dir)
-    orders = _load_orders(pending_path)
-
-    if any(o["ticker"] == ticker and o["status"] == "pending" for o in orders):
-        logger.info("Pending order already exists for %s — skipping duplicate", ticker)
+    if _auto_execute_enabled() and _has_alpaca_keys():
+        try:
+            result = submit_order(order, None, results_dir)
+            logger.info(
+                "[AUTO] Submitted %s %s to Alpaca paper (signal: %s, id: %s)",
+                action, ticker, decision_upper, result.get("alpaca_order_id"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "[AUTO] Submit failed for %s, falling back to pending queue: %s", ticker, exc
+            )
+            _stage_to_file(order, results_dir)
         return
 
+    _stage_to_file(order, results_dir)
+
+
+def _stage_to_file(order: dict, results_dir: Path) -> None:
+    pending_path = _pending_path(results_dir)
+    orders = _load_orders(pending_path)
+    if any(o["ticker"] == order["ticker"] and o["status"] == "pending" for o in orders):
+        logger.info("Pending order already exists for %s — skipping duplicate", order["ticker"])
+        return
     orders.append(order)
     _save_orders(pending_path, orders)
-    logger.info("Staged %s order for %s (signal: %s)", action, ticker, decision_upper)
+    logger.info("Staged %s order for %s (signal: %s)", order["action"], order["ticker"], order["signal"])
 
 
 def get_pending_orders(results_dir: Path) -> list[dict]:
