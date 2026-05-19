@@ -66,13 +66,13 @@ def build_context(
     def _pct(v: Optional[float]) -> str:
         return f"{v:+.1f}%" if v is not None else "n/a"
 
-    rows = [f"| {p.ticker} | {p.sector} | ${p.cost_basis:,.0f} | {_pct(p.weight_pct)} | {_pct(p.unrealized_pct)} |" for p in positions]
+    rows = [f"| {p.ticker} | {p.sector} | {_pct(p.weight_pct)} | {_pct(p.unrealized_pct)} |" for p in positions]
 
     active_pos = next((p for p in positions if p.ticker == active_ticker), None)
     if active_pos:
         active_note = (
             f"**Current ticker ({active_ticker})** is a current holding: "
-            f"${active_pos.cost_basis:,.0f} cost basis ({_pct(active_pos.weight_pct)} of account), "
+            f"{_pct(active_pos.weight_pct)} of account, "
             f"unrealized P&L {_pct(active_pos.unrealized_pct)}."
         )
     elif active_ticker in (t for t in portfolio.watch_list):
@@ -86,12 +86,11 @@ def build_context(
 
     lines = [
         "## PORTFOLIO CONTEXT",
-        f"**Total cost basis:** ${total_cost:,.2f}  |  "
-        f"**Cash:** ${cash:,.2f} ({cash_weight:.1f}% of account)  |  "
+        f"**Cash allocation:** {cash_weight:.1f}% of account  |  "
         f"**Strategy:** {portfolio.strategy}",
         "",
-        "| Ticker | Sector | Cost Basis | Weight | Unrealized |",
-        "|--------|--------|-----------|--------|-----------|",
+        "| Ticker | Sector | Weight | Unrealized |",
+        "|--------|--------|--------|-----------|",
         *rows,
         "",
         active_note,
