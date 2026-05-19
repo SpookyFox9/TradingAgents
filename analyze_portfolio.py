@@ -108,6 +108,7 @@ def main() -> None:
     from portfolio_lib.cost_tracker import CostTracker, append_cost_log
     from portfolio_lib.discovery import suggest_tickers
     from portfolio_lib.persona import render as render_persona
+    from portfolio_lib.executor import stage_pending_order
 
     run_cfg = RunConfig.default(
         use_alpha_vantage=args.av,
@@ -205,7 +206,16 @@ def main() -> None:
                     acquired_date=holding.acquired_date,
                     results_dir=run_cfg.results_dir,
                 )
-                write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                stage_pending_order(
+                    ticker=result.ticker,
+                    decision=result.decision,
+                    cash_balance=portfolio.cash_balance,
+                    current_price=prices.get(result.ticker),
+                    target_price=None,
+                    report_path=report_path,
+                    results_dir=run_cfg.results_dir,
+                )
                 results.append(result)
             except Exception as exc:
                 logger.error("Failed to analyze %s: %s", holding.ticker, exc, exc_info=True)
@@ -230,7 +240,16 @@ def main() -> None:
                     target=target,
                     results_dir=run_cfg.results_dir,
                 )
-                write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                stage_pending_order(
+                    ticker=result.ticker,
+                    decision=result.decision,
+                    cash_balance=portfolio.cash_balance,
+                    current_price=get_price(result.ticker),
+                    target_price=target,
+                    report_path=report_path,
+                    results_dir=run_cfg.results_dir,
+                )
                 results.append(result)
             except Exception as exc:
                 logger.error("Failed to analyze %s: %s", ticker, exc, exc_info=True)
