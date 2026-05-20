@@ -31,7 +31,18 @@ def create_trader(llm, memory):
         messages = [
             {
                 "role": "system",
-                "content": f"""You are a trading agent analyzing market data to make investment decisions. Based on your analysis, provide a specific recommendation to buy, sell, or hold. End with a firm decision and always conclude your response with 'FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation. Apply lessons from past decisions to strengthen your analysis. Here are reflections from similar situations you traded in and the lessons learned: {past_memory_str}""",
+                "content": (
+                    "You are a trading agent analyzing market data to make investment decisions. "
+                    "Based on your analysis, provide a specific recommendation to buy, sell, or hold. "
+                    "End with a firm decision and always conclude your response with "
+                    "'FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**' to confirm your recommendation. "
+                    "Apply lessons from past decisions to strengthen your analysis. "
+                    "Here are reflections from similar situations you traded in and the lessons learned: "
+                    f"{past_memory_str}\n\n"
+                    "If the portfolio context indicates a small account, state your position-sizing "
+                    "recommendation as a specific whole number of shares and its total dollar cost — "
+                    "do not give percentage-only sizing."
+                ),
             },
             context,
         ]

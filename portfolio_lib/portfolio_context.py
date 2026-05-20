@@ -16,6 +16,26 @@ _SECTOR_MAP: dict[str, str] = {
     "MU":   "Memory Semiconductors",
 }
 
+_SCALE_TIERS: tuple[tuple[float, str], ...] = (
+    (10_000.0,  "Small account (<$10K)"),
+    (100_000.0, "Mid-size account ($10K–$100K)"),
+)
+
+_SMALL_ACCOUNT_SIZING_NOTE = (
+    "> **Position-sizing rule (small account):** Express every BUY recommendation as a whole "
+    "number of shares that fits within available cash for a single position — not a percentage "
+    "weight. State the dollar cost of the recommended share count. If one share exceeds a "
+    "sensible position size, say so explicitly rather than recommending a fractional buy."
+)
+
+
+def _account_scale(cash: float) -> str:
+    """Classify account size from available cash for position-sizing guidance."""
+    for ceiling, label in _SCALE_TIERS:
+        if cash < ceiling:
+            return label
+    return "Large account (>$100K)"
+
 
 @dataclass(frozen=True)
 class PositionSummary:
@@ -59,6 +79,7 @@ def build_context(
         ))
 
     cash_weight = cash / (total_cost + cash) * 100 if (total_cost + cash) > 0 else 0
+    scale = _account_scale(cash)
 
     # Sort by cost basis descending for table
     positions.sort(key=lambda p: p.cost_basis, reverse=True)
@@ -86,7 +107,8 @@ def build_context(
 
     lines = [
         "## PORTFOLIO CONTEXT",
-        f"**Cash allocation:** {cash_weight:.1f}% of account  |  "
+        f"**Available cash:** ${cash:,.2f} ({cash_weight:.1f}% of account)  |  "
+        f"**Account scale:** {scale}  |  "
         f"**Strategy:** {portfolio.strategy}",
         "",
         "| Ticker | Sector | Weight | Unrealized |",
@@ -95,4 +117,6 @@ def build_context(
         "",
         active_note,
     ]
+    if scale == _SCALE_TIERS[0][1]:  # small account
+        lines += ["", _SMALL_ACCOUNT_SIZING_NOTE]
     return "\n".join(lines)
