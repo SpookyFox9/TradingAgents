@@ -139,7 +139,7 @@ def _build_llm(model: str, callbacks: list[Any]) -> ChatAnthropic:
 
 def suggest_tickers(
     persona_block: str,
-    holdings: list[str],
+    exclude: list[str],
     macro_snapshot: Any,
     n: int,
     llm_config: dict,
@@ -148,6 +148,8 @@ def suggest_tickers(
 
     Returns all CandidateResult objects sorted survivors-first.
     Callers check .passed to separate survivors from cuts.
+    ``exclude`` should contain all held + watchlist tickers so discovery
+    only surfaces genuinely new names.
     """
     from portfolio_lib.macro import render as render_macro
 
@@ -159,7 +161,7 @@ def suggest_tickers(
     llm_deep  = _build_llm(sonnet_model, callbacks)
 
     macro_block  = render_macro(macro_snapshot)
-    coverage     = _layer_coverage(holdings)
+    coverage     = _layer_coverage(exclude)
     n_generate   = n + 3
 
     # ── Pass 1: Generate ───────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ def suggest_tickers(
         f"{persona_block}\n\n"
         f"{macro_block}\n\n"
         "## DISCOVERY TASK — Pass 1: Generate Candidates\n\n"
-        f"Current holdings (exclude these): {', '.join(holdings) or 'none'}\n\n"
+        f"Already tracked (holdings + watchlist — exclude these): {', '.join(exclude) or 'none'}\n\n"
         "AI Infrastructure layer coverage:\n"
         + "\n".join(gap_lines)
         + f"\n\nGenerate {n_generate} distinct stock candidates."
@@ -229,7 +231,7 @@ def suggest_tickers(
         f"{persona_block}\n\n"
         f"{macro_block}\n\n"
         "## DISCOVERY TASK — Pass 2: Challenge Candidates\n\n"
-        f"Current holdings: {', '.join(holdings) or 'none'}\n"
+        f"Already tracked (holdings + watchlist — exclude these): {', '.join(exclude) or 'none'}\n"
         f"Covered layers: {covered_summary}\n\n"
         "Proposed candidates and rationale:\n"
         + json.dumps(

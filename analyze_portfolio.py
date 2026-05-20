@@ -325,12 +325,14 @@ def main() -> None:
     # ── Discovery pass (optional) ──────────────────────────────────────────────
     all_candidates = []
     if args.discover and (not args.watchlist or args.discover_only):
-        held_tickers = [h.ticker for h in portfolio.holdings]
+        held_tickers      = [h.ticker for h in portfolio.holdings]
+        watchlist_tickers = [t for t, _ in iter_watchlist(portfolio)]
+        exclude_tickers   = list(dict.fromkeys(held_tickers + watchlist_tickers))
         print(f"\nDiscovering {args.discover} candidates "
               f"(layer gaps analysed · {macro_snapshot.regime} regime)...")
         all_candidates = suggest_tickers(
             persona_block=render_persona(),
-            holdings=held_tickers,
+            exclude=exclude_tickers,
             macro_snapshot=macro_snapshot,
             n=args.discover,
             llm_config=run_cfg.llm_config,
