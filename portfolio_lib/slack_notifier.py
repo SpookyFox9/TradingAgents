@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import urllib.request
 import urllib.error
 from typing import Optional
@@ -30,6 +31,46 @@ def _pnl_str(entry: float, current: Optional[float], shares: float) -> str:
     return f"{_fmt(current)} ({sign}{pct:.1f}%)"
 
 
+def _trader_verdict(text: str, max_chars: int = 140) -> Optional[str]:
+    if not text:
+        return None
+    m = re.search(r'FINAL TRANSACTION PROPOSAL[*:\s]+([^\n*]+)', text, re.IGNORECASE)
+    verdict = m.group(1).strip().rstrip('*').strip() if m else None
+    m2 = re.search(r'\*{0,2}Specific Action[*:\s]+([^\n]+)', text, re.IGNORECASE)
+    if m2:
+        action = m2.group(1).strip()
+        end = action.find('. ')
+        action = action[:end + 1] if end > 0 else action
+        action = (action[:max_chars].rstrip() + '...') if len(action) > max_chars else action
+        return f"{verdict} — {action}" if verdict else action
+    return verdict
+
+
+def _risk_rationale(text: str, max_chars: int = 160) -> Optional[str]:
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Action[*:\s]+([^\n|]+)', text, re.IGNORECASE)
+    if m:
+        rationale = m.group(1).strip().rstrip('*').strip()
+        return (rationale[:max_chars].rstrip() + '...') if len(rationale) > max_chars else rationale
+    for line in text.splitlines():
+        line = re.sub(r'[*#|]', '', line).strip()
+        if len(line) > 40:
+            return (line[:max_chars].rstrip() + '...') if len(line) > max_chars else line
+    return None
+
+
+def _ticker_detail_lines(r: TickerResult) -> list[str]:
+    extra = []
+    verdict = _trader_verdict(r.trader_investment_plan)
+    rationale = _risk_rationale(r.risk_judge_decision)
+    if verdict:
+        extra.append(f"    _Trader: {verdict}_")
+    if rationale:
+        extra.append(f"    _Risk: {rationale}_")
+    return extra
+
+
 def build_slack_text(
     results: list[TickerResult],
     regime: Optional[str],
@@ -56,6 +97,7 @@ def build_slack_text(
             pnl = _pnl_str(r.entry, prices[r.ticker], r.shares)
             stop = _fmt(prices[r.ticker] * 0.95) if prices[r.ticker] and prices[r.ticker] > r.entry else "—"
             lines.append(f"  {emoji}  *{r.ticker}*  {r.decision}  {pnl}  Stop: {stop}")
+            lines.extend(_ticker_detail_lines(r))
         lines.append("")
 
     if watchlist:
@@ -68,6 +110,7 @@ def build_slack_text(
                 pct = (r.target - current) / current * 100
                 dist = f"  -> target {_fmt(r.target)} ({pct:+.1f}%)"
             lines.append(f"  {emoji}  *{r.ticker}*  {r.decision}  {_fmt(current)}{dist}")
+            lines.extend(_ticker_detail_lines(r))
         lines.append("")
 
     if candidates:
@@ -75,6 +118,7 @@ def build_slack_text(
         for r in candidates:
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
             lines.append(f"  {emoji}  *{r.ticker}*  {r.decision}  {_fmt(prices[r.ticker])}")
+            lines.extend(_ticker_detail_lines(r))
         lines.append("")
 
     action_results = [r for r in results if r.decision.upper() in ("BUY", "SELL", "OVERWEIGHT", "UNDERWEIGHT")]
