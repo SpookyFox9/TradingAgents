@@ -155,10 +155,11 @@ Reports are written to `Analysis/` (created automatically next to your `portfoli
 
 | File | Contents |
 |------|----------|
-| `YYYY-MM-DD_HHmm_TICKER.md` | Full per-ticker report — decision, all agent reasoning, trailing stop |
+| `YYYY-MM-DD_HHmm_TICKER_{hold\|watch\|disc}[_deep].md` | Full per-ticker report — decision, all agent reasoning, trailing stop. Filename encodes run type (`hold` = holding, `watch` = watchlist, `disc` = discovery candidate) and `_deep` if deep mode was used. |
 | `YYYY-MM-DD_HHmm_SUMMARY.md` | Digest — decisions table, action items, signal track record |
 | `signal_log.jsonl` | Append-only signal record. BUY/SELL signals grade after 14 days; HOLD after 30. Rolling hit-rate appears in the next run's summary digest under "Signal Track Record". |
 | `cost_log.jsonl` | Token usage and USD cost per run (per-model breakdown) |
+| `archive/` | Reports and logs older than 7 days are moved here automatically after each successful run. Run `.\archive_analysis.ps1 --days N` manually to use a different cutoff. |
 
 ---
 
@@ -187,7 +188,27 @@ The file is gitignored and will not be committed.
 
 ---
 
-## 7. Cost estimates
+## 7. Optional: Slack notifications
+
+After each successful run the pipeline can post a concise digest to a Slack channel — holdings with P&L, watchlist distance to target, trader verdict, risk rationale, and any action items.
+
+**Setup (one-time):**
+
+1. Create a free Slack workspace (or use an existing personal one you fully control)
+2. Go to **api.slack.com/apps** → Create App → Incoming Webhooks → Activate → Add to channel → copy the webhook URL
+3. Store the URL in your environment (Windows):
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/...", "User")
+```
+
+The `run_analysis.ps1` wrapper loads this automatically. If the variable is not set, Slack is skipped silently — no other behavior changes.
+
+**Privacy note:** The digest includes position sizes, entry prices, and P&L. Use a private channel in a workspace where you are the sole admin.
+
+---
+
+## 8. Cost estimates
 
 Each ticker runs a full multi-agent pipeline (market + news + fundamentals analysts → bull/bear researchers → risk → trader). Using Claude Sonnet + Haiku:
 
@@ -201,7 +222,7 @@ Actual costs are recorded in `Analysis/cost_log.jsonl` after every run.
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 **`ANTHROPIC_API_KEY is not set`**
 Check that `.env` exists inside the `TradingAgents/` directory and contains your key. The file must be named `.env` exactly (not `env` or `.env.txt`).
@@ -217,7 +238,7 @@ Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` in PowerShell as Admin
 
 ---
 
-## 9. Keeping the fork up to date
+## 10. Keeping the fork up to date
 
 When TauricResearch releases a new version, pull it into your fork:
 
@@ -234,7 +255,7 @@ Before merging, skim the release notes. Upstream occasionally changes `tradingag
 
 ---
 
-## 10. Optional: personal config repo
+## 11. Optional: personal config repo
 
 If you want version control for your personal files — portfolio history, investor persona, and an AI context file — create a small private repo alongside TradingAgents.
 
