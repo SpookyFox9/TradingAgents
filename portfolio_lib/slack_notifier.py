@@ -18,12 +18,14 @@ _DECISION_EMOJI = {
     "HOLD": ":white_circle:",
 }
 
+_ACTIONABLE = {"BUY", "SELL", "OVERWEIGHT", "UNDERWEIGHT"}
+
 
 def _fmt(p: Optional[float]) -> str:
     return f"${p:,.2f}" if p is not None else "n/a"
 
 
-def _pnl_str(entry: float, current: Optional[float], shares: float) -> str:
+def _pnl_str(entry: float, current: Optional[float]) -> str:
     if current is None:
         return "n/a"
     pct = (current - entry) / entry * 100
@@ -60,15 +62,36 @@ def _risk_rationale(text: str, max_chars: int = 160) -> Optional[str]:
     return None
 
 
-def _ticker_detail_lines(r: TickerResult) -> list[str]:
-    extra = []
-    verdict = _trader_verdict(r.trader_investment_plan)
-    rationale = _risk_rationale(r.risk_judge_decision)
-    if verdict:
-        extra.append(f"    _Trader: {verdict}_")
-    if rationale:
-        extra.append(f"    _Risk: {rationale}_")
-    return extra
+def _extract_stop(text: str) -> Optional[str]:
+    if not text:
+        return None
+    m = re.search(r'\*\*Hard Stop\*\*\s*\|?\s*([^\n|]+)', text)
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    price_m = re.search(r'\$([\d,]+)', raw)
+    return f"${price_m.group(1)}" if price_m else None
+
+
+def _extract_trim(text: str) -> Optional[str]:
+    if not text:
+        return None
+    m = re.search(r'\*\*Partial Profit Target\*\*\s*\|?\s*([^\n|]+)', text)
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    range_m = re.search(r'\$([\d,]+)[–—-]\$?([\d,]+)', raw)
+    if range_m:
+        return f"${range_m.group(1)}-${range_m.group(2)}"
+    price_m = re.search(r'\$([\d,]+)', raw)
+    return f"${price_m.group(1)}" if price_m else None
+
+
+def _action_text(verdict: Optional[str]) -> Optional[str]:
+    """Strip the decision label prefix from a trader verdict, leaving just the action sentence."""
+    if not verdict:
+        return None
+    return verdict.split(' — ', 1)[-1] if ' — ' in verdict else verdict
 
 
 def build_slack_text(
@@ -81,51 +104,78 @@ def build_slack_text(
 ) -> str:
     ts = run_timestamp or analysis_date
     cost_str = f"${run_cost_usd:.4f}" if run_cost_usd is not None else "n/a"
-    header = f":bar_chart: *StockBoy — {ts}* | Regime: `{regime or 'unknown'}` | Cost: {cost_str}"
 
     holdings = [r for r in results if r.kind == TickerKind.HOLDING]
     watchlist = [r for r in results if r.kind == TickerKind.WATCHLIST]
     candidates = [r for r in results if r.kind == TickerKind.CANDIDATE]
     prices = {r.ticker: get_price(r.ticker) for r in results}
+    action_results = [r for r in results if r.decision.upper() in _ACTIONABLE]
 
-    lines = [header, ""]
+    lines: list[str] = []
 
-    if holdings:
-        lines.append("*Holdings*")
-        for r in holdings:
+    # ── Action items at the top ──────────────────────────────────────────────
+    if action_results:
+        for r in action_results:
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
-            pnl = _pnl_str(r.entry, prices[r.ticker], r.shares)
-            stop = _fmt(prices[r.ticker] * 0.95) if prices[r.ticker] and prices[r.ticker] > r.entry else "—"
-            lines.append(f"  {emoji}  *{r.ticker}*  {r.decision}  {pnl}  Stop: {stop}")
-            lines.extend(_ticker_detail_lines(r))
+            act = _action_text(_trader_verdict(r.trader_investment_plan))
+            top_line = f":zap: {emoji} *{r.ticker}: {r.decision}*"
+            if act:
+                top_line += f" — {act}"
+            lines.append(top_line)
         lines.append("")
 
+    # ── Header ───────────────────────────────────────────────────────────────
+    lines += [f":bar_chart: *StockBoy {ts}* | `{regime or 'unknown'}` | {cost_str}", ""]
+
+    # ── Holdings ─────────────────────────────────────────────────────────────
+    if holdings:
+        for r in holdings:
+            emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
+            current = prices[r.ticker]
+            pnl = _pnl_str(r.entry, current)
+            stop = _extract_stop(r.risk_judge_decision)
+            trim = _extract_trim(r.risk_judge_decision)
+            levels = " | ".join(filter(None, [
+                f"Stop {stop}" if stop else None,
+                f"Trim {trim}" if trim else None,
+            ]))
+            act = _action_text(_trader_verdict(r.trader_investment_plan))
+
+            lines.append(f"{emoji} *{r.ticker}* — {r.decision}")
+            lines.append(f"  {pnl} | {r.shares:.0f}sh @ {_fmt(r.entry)}")
+            if levels:
+                lines.append(f"  {levels}")
+            if act:
+                lines.append(f"  _{act}_")
+        lines.append("")
+
+    # ── Watchlist ────────────────────────────────────────────────────────────
     if watchlist:
-        lines.append("*Watchlist*")
         for r in watchlist:
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
             current = prices[r.ticker]
             dist = ""
             if current is not None and r.target is not None:
                 pct = (r.target - current) / current * 100
-                dist = f"  -> target {_fmt(r.target)} ({pct:+.1f}%)"
-            lines.append(f"  {emoji}  *{r.ticker}*  {r.decision}  {_fmt(current)}{dist}")
-            lines.extend(_ticker_detail_lines(r))
+                dist = f" | Target {_fmt(r.target)} ({pct:+.1f}%)"
+            act = _action_text(_trader_verdict(r.trader_investment_plan))
+
+            lines.append(f"{emoji} *{r.ticker}* — {r.decision} (Watchlist)")
+            lines.append(f"  {_fmt(current)}{dist}")
+            if act:
+                lines.append(f"  _{act}_")
         lines.append("")
 
+    # ── Discovery candidates ─────────────────────────────────────────────────
     if candidates:
-        lines.append("*Discovery*")
         for r in candidates:
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
-            lines.append(f"  {emoji}  *{r.ticker}*  {r.decision}  {_fmt(prices[r.ticker])}")
-            lines.extend(_ticker_detail_lines(r))
-        lines.append("")
+            act = _action_text(_trader_verdict(r.trader_investment_plan))
 
-    action_results = [r for r in results if r.decision.upper() in ("BUY", "SELL", "OVERWEIGHT", "UNDERWEIGHT")]
-    if action_results:
-        lines.append(":zap: *Actions Required*")
-        for r in action_results:
-            lines.append(f"  • *{r.ticker}*: {r.decision}")
+            lines.append(f"{emoji} *{r.ticker}* — {r.decision} (Discovery)")
+            lines.append(f"  {_fmt(prices[r.ticker])}")
+            if act:
+                lines.append(f"  _{act}_")
         lines.append("")
 
     lines.append(f"*Cash:* {_fmt(cash_balance)}")
