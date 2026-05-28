@@ -162,6 +162,7 @@ def main() -> None:
     from portfolio_lib.analyzer import analyze_ticker, TickerKind
     from portfolio_lib.reporter import write_ticker_report
     from portfolio_lib.digest import write_digest
+    from portfolio_lib.slack_notifier import post_digest as post_slack_digest
     from portfolio_lib.prices import get_price
     from portfolio_lib.macro import fetch_macro_snapshot
     from portfolio_lib.signal_log import grade_open_signals
@@ -379,6 +380,13 @@ def main() -> None:
             rejected_candidates=rejected_candidates or None,
             regime=macro_snapshot.regime,
         )
+
+        slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
+        if slack_webhook:
+            try:
+                post_slack_digest(results, macro_snapshot.regime, cost_tracker.total_usd, portfolio.cash_balance, run_cfg.analysis_date, slack_webhook, run_timestamp=run_cfg.run_timestamp)
+            except Exception as exc:
+                logger.warning("Slack digest failed: %s", type(exc).__name__)
 
         bkd = cost_tracker.breakdown()
         cost_detail = "  ".join(
