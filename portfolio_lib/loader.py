@@ -14,8 +14,8 @@ class OpenOrder:
     ticker: str
     side: str
     type: str
-    price: float
     shares: float
+    price: float = 0.0  # 0.0 for MARKET orders
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,8 @@ def load_portfolio(path: Path) -> Portfolio:
             ticker=o["ticker"],
             side=o["side"],
             type=o["type"],
-            price=float(o["price"]),
             shares=float(o["shares"]),
+            price=float(o.get("price", 0.0)),
         ))
 
     return Portfolio(
