@@ -271,7 +271,7 @@ def main() -> None:
                     acquired_date=holding.acquired_date,
                     results_dir=run_cfg.results_dir,
                 )
-                report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp, deep_mode=run_cfg.deep_mode, analyst_preset=run_cfg.analyst_preset)
                 stage_pending_order(
                     ticker=result.ticker,
                     decision=result.decision,
@@ -306,7 +306,7 @@ def main() -> None:
                     target=target,
                     results_dir=run_cfg.results_dir,
                 )
-                report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp, deep_mode=run_cfg.deep_mode, analyst_preset=run_cfg.analyst_preset)
                 stage_pending_order(
                     ticker=result.ticker,
                     decision=result.decision,
@@ -355,7 +355,7 @@ def main() -> None:
                     target=None,
                     results_dir=None,   # skip signal log for candidates
                 )
-                write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp)
+                write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp, deep_mode=run_cfg.deep_mode, analyst_preset=run_cfg.analyst_preset)
                 results.append(result)
             except Exception as exc:
                 logger.error("Failed to analyze candidate %s: %s", candidate.ticker, exc, exc_info=True)

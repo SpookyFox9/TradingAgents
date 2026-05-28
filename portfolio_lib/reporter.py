@@ -25,10 +25,32 @@ def _trailing_stop(entry: float, current: Optional[float]) -> str:
     return f"N/A — position is underwater (current {_fmt_price(current)}, {pnl_pct:.1f}%)"
 
 
-def write_ticker_report(result: TickerResult, results_dir: Path, analysis_date: str, run_timestamp: Optional[str] = None) -> Path:
+_KIND_TAG = {
+    TickerKind.HOLDING:   "hold",
+    TickerKind.WATCHLIST: "watch",
+    TickerKind.CANDIDATE: "disc",
+}
+
+_KIND_LABEL = {
+    TickerKind.HOLDING:   "Holding",
+    TickerKind.WATCHLIST: "Watchlist",
+    TickerKind.CANDIDATE: "Discovery",
+}
+
+
+def write_ticker_report(
+    result: TickerResult,
+    results_dir: Path,
+    analysis_date: str,
+    run_timestamp: Optional[str] = None,
+    deep_mode: bool = False,
+    analyst_preset: str = "quality",
+) -> Path:
     results_dir.mkdir(parents=True, exist_ok=True)
     filename_ts = run_timestamp or analysis_date
-    out = results_dir / f"{filename_ts}_{result.ticker}.md"
+    tag = _KIND_TAG[result.kind]
+    depth_suffix = "_deep" if deep_mode else ""
+    out = results_dir / f"{filename_ts}_{result.ticker}_{tag}{depth_suffix}.md"
 
     if result.kind == TickerKind.HOLDING:
         current = get_price(result.ticker)
@@ -66,8 +88,10 @@ def write_ticker_report(result: TickerResult, results_dir: Path, analysis_date: 
     if notes:
         notes_block = "## Special Notes\n\n" + "\n".join(f"- {n}" for n in notes) + _SECTION_SEP
 
+    run_label = f"{_KIND_LABEL[result.kind]} · {'Deep' if deep_mode else 'Standard'} · {analyst_preset}"
     sections = [
         f"# {result.ticker} Analysis — {analysis_date}",
+        f"> **Run:** {run_label}",
         "",
         header,
         *(([stop_line, ""]) if stop_line else []),
