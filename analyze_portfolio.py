@@ -165,7 +165,7 @@ def main() -> None:
     from portfolio_lib.slack_notifier import post_digest as post_slack_digest
     from portfolio_lib.prices import get_price
     from portfolio_lib.macro import fetch_macro_snapshot
-    from portfolio_lib.signal_log import grade_open_signals
+    from portfolio_lib.signal_log import grade_open_signals, tag_compliance_block
     from portfolio_lib.memory_seed import seed_memories
     from portfolio_lib.cost_tracker import CostTracker, append_cost_log
     from portfolio_lib.discovery import suggest_tickers
@@ -273,7 +273,7 @@ def main() -> None:
                     results_dir=run_cfg.results_dir,
                 )
                 report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp, deep_mode=run_cfg.deep_mode, analyst_preset=run_cfg.analyst_preset)
-                stage_pending_order(
+                blocked_rule = stage_pending_order(
                     ticker=result.ticker,
                     decision=result.decision,
                     kind=result.kind,
@@ -282,7 +282,10 @@ def main() -> None:
                     target_price=None,
                     report_path=report_path,
                     results_dir=run_cfg.results_dir,
+                    portfolio=portfolio,
                 )
+                if blocked_rule:
+                    tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)
                 results.append(result)
             except Exception as exc:
                 logger.error("Failed to analyze %s: %s", holding.ticker, exc, exc_info=True)
@@ -308,7 +311,7 @@ def main() -> None:
                     results_dir=run_cfg.results_dir,
                 )
                 report_path = write_ticker_report(result, run_cfg.results_dir, run_cfg.analysis_date, run_cfg.run_timestamp, deep_mode=run_cfg.deep_mode, analyst_preset=run_cfg.analyst_preset)
-                stage_pending_order(
+                blocked_rule = stage_pending_order(
                     ticker=result.ticker,
                     decision=result.decision,
                     kind=result.kind,
@@ -317,7 +320,10 @@ def main() -> None:
                     target_price=target,
                     report_path=report_path,
                     results_dir=run_cfg.results_dir,
+                    portfolio=portfolio,
                 )
+                if blocked_rule:
+                    tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)
                 results.append(result)
             except Exception as exc:
                 logger.error("Failed to analyze %s: %s", ticker, exc, exc_info=True)
@@ -337,6 +343,7 @@ def main() -> None:
             macro_snapshot=macro_snapshot,
             n=args.discover,
             llm_config=run_cfg.llm_config,
+            portfolio=portfolio,
         )
         survivors = [c for c in all_candidates if c.passed]
         if survivors:

@@ -143,6 +143,7 @@ def suggest_tickers(
     macro_snapshot: Any,
     n: int,
     llm_config: dict,
+    portfolio=None,  # portfolio_lib.loader.Portfolio — used for compliance filter
 ) -> list[CandidateResult]:
     """Two-pass GARP discovery.
 
@@ -204,11 +205,16 @@ def suggest_tickers(
 
     # ── Data fetch ─────────────────────────────────────────────────────────────
 
+    from portfolio_lib.compliance import is_blocked_ticker
+
     enriched: list[dict] = []
     for c in raw_candidates:
         ticker = c["ticker"].strip().upper()
         if not _TICKER_RE.match(ticker):
             logger.warning("Discovery pass 1 rejected malformed ticker: %r", ticker)
+            continue
+        if is_blocked_ticker(ticker, portfolio):
+            logger.info("Discovery: %s filtered by compliance (warrant/lockout/harvest)", ticker)
             continue
         rationale = str(c.get("rationale", "")).strip()[:_MAX_RATIONALE_LEN]
         metrics = _fetch_garp_metrics(ticker)

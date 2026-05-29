@@ -35,10 +35,12 @@ def record_decision(
     analysis_date: str,
     decision: str,
     price: Optional[float],
+    *,
+    compliance_block: Optional[str] = None,
 ) -> None:
     """Append one signal record. Idempotent — duplicate (date, ticker) is silently skipped."""
     log = _log_path(results_dir)
-    record = {
+    record: dict = {
         "date": analysis_date,
         "ticker": ticker,
         "decision": decision.upper(),
@@ -48,6 +50,8 @@ def record_decision(
         "grade_date": None,
         "grade_version": _GRADE_VERSION,
     }
+    if compliance_block:
+        record["compliance_block"] = compliance_block
 
     existing_keys: set[str] = set()
     if log.exists():
@@ -65,6 +69,41 @@ def record_decision(
     with log.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
     logger.debug("Recorded signal: %s %s %s @ %s", analysis_date, ticker, decision, price)
+
+
+def tag_compliance_block(
+    results_dir: Path,
+    ticker: str,
+    analysis_date: str,
+    rule_code: str,
+) -> None:
+    """Retroactively tag an existing signal record as compliance-blocked.
+
+    Called when stage_pending_order blocks an order after the signal was already
+    recorded by the analyzer. Adds compliance_block and sets grade='Blocked' so
+    the signal is excluded from hit-rate statistics.
+    """
+    log = _log_path(results_dir)
+    if not log.exists():
+        return
+    key = f"{analysis_date}|{ticker}"
+    lines = log.read_text(encoding="utf-8").splitlines()
+    updated: list[str] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+            if f"{row.get('date')}|{row.get('ticker')}" == key and row.get("grade") is None:
+                row["compliance_block"] = rule_code
+                row["grade"] = "Blocked"
+                row["grade_date"] = date.today().isoformat()
+                line = json.dumps(row)
+        except (json.JSONDecodeError, KeyError):
+            pass
+        updated.append(line)
+    log.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    logger.debug("Tagged signal %s %s as compliance-blocked (%s)", analysis_date, ticker, rule_code)
 
 
 def grade_open_signals(results_dir: Path, get_price_fn) -> int:
@@ -96,6 +135,11 @@ def grade_open_signals(results_dir: Path, get_price_fn) -> int:
             continue
 
         if row.get("grade") is not None:
+            updated.append(line)
+            continue
+
+        # Skip signals that were never actionable due to a compliance block
+        if row.get("compliance_block"):
             updated.append(line)
             continue
 

@@ -28,6 +28,7 @@ class Holding:
     harvest_target_date: Optional[str] = None
     lot_method: Optional[str] = None
     wash_sale_lockout_days: Optional[int] = None
+    wash_sale_lockout_until: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ def load_portfolio(path: Path) -> Portfolio:
             harvest_target_date=h.get("harvest_target_date"),
             lot_method=h.get("lot_method"),
             wash_sale_lockout_days=int(lockout) if lockout is not None else None,
+            wash_sale_lockout_until=h.get("wash_sale_lockout_until"),
         ))
 
     open_orders = []

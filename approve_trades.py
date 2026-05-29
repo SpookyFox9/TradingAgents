@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from portfolio_lib.config import RunConfig
 from portfolio_lib.executor import get_pending_orders, submit_order, reject_order
+from portfolio_lib.loader import load_portfolio
 
 
 def main() -> None:
@@ -29,6 +30,7 @@ def main() -> None:
         else Path(__file__).resolve().parent.parent / "portfolio.json"
     )
     run_cfg = RunConfig.default(portfolio_path=portfolio_path)
+    portfolio = load_portfolio(portfolio_path)
     orders = get_pending_orders(run_cfg.results_dir)
 
     if not orders:
@@ -73,7 +75,7 @@ def main() -> None:
                 return
 
             if raw == "y":
-                result = submit_order(order, None, run_cfg.results_dir)
+                result = submit_order(order, None, run_cfg.results_dir, portfolio=portfolio)
                 alpaca_id = result.get("alpaca_order_id", "n/a")
                 print(f"      Submitted — Alpaca id: {alpaca_id}\n")
                 break
@@ -89,7 +91,7 @@ def main() -> None:
                     if qty <= 0 or qty > 500:
                         print("      Quantity out of safe range (1-500) — re-enter.\n")
                         continue
-                    result = submit_order(order, qty, run_cfg.results_dir)
+                    result = submit_order(order, qty, run_cfg.results_dir, portfolio=portfolio)
                     alpaca_id = result.get("alpaca_order_id", "n/a")
                     print(f"      Submitted {qty} shares — Alpaca id: {alpaca_id}\n")
                     break

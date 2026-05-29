@@ -76,7 +76,9 @@ def stage_pending_order(
     target_price: Optional[float],
     report_path: Optional[Path],
     results_dir: Path,
-) -> None:
+    *,
+    portfolio=None,  # portfolio_lib.loader.Portfolio — optional for backwards compat
+) -> Optional[str]:
     """Stage or auto-execute an order depending on paper/live mode.
 
     Paper + ALPACA_AUTO_EXECUTE=true (default): submits immediately to Alpaca.
@@ -84,20 +86,23 @@ def stage_pending_order(
     Skips silently if a pending order already exists for this ticker.
     SELL/UNDERWEIGHT signals are ignored for WATCHLIST and CANDIDATE tickers
     (no position to sell).
+
+    Returns the compliance rule code (e.g. "R1") if the order was blocked, or
+    None if the order was staged / submitted successfully.
     """
     ticker = ticker.strip().upper()
     if not re.fullmatch(r"[A-Z]{1,5}", ticker):
         logger.warning("Invalid ticker symbol %r — skipping", ticker)
-        return
+        return None
 
     decision_upper = decision.strip().upper()
     if decision_upper not in ACTIONABLE:
-        return
+        return None
 
     kind_upper = kind.upper() if isinstance(kind, str) else str(kind).split(".")[-1].upper()
     if decision_upper in ACTIONABLE_SELL and kind_upper in ("WATCHLIST", "CANDIDATE"):
         logger.info("Skipping SELL signal for %s — not a held position (%s)", ticker, kind_upper)
-        return
+        return None
 
     action = "BUY" if decision_upper in ACTIONABLE_BUY else "SELL"
     price_for_sizing = current_price or target_price or 0.0
@@ -106,6 +111,26 @@ def stage_pending_order(
         round(suggested_notional / price_for_sizing, 4) if price_for_sizing > 0 else 0.0
     )
     limit_price = (target_price if (action == "BUY" and target_price) else current_price)
+
+    # Compliance pre-flight check
+    if portfolio is not None:
+        from portfolio_lib.compliance import check_order
+        result = check_order(
+            ticker, action, portfolio,
+            trade_log_path=_trade_log_path(results_dir),
+            suggested_notional=suggested_notional,
+        )
+        if not result.allowed:
+            logger.warning(
+                "Compliance block [%s] — %s %s skipped: %s",
+                result.rule, action, ticker, result.reason,
+            )
+            return result.rule
+    else:
+        logger.warning(
+            "stage_pending_order called without portfolio — compliance checks skipped for %s",
+            ticker,
+        )
 
     order: dict = {
         "id": str(uuid.uuid4()),
@@ -128,19 +153,20 @@ def stage_pending_order(
 
     if _auto_execute_enabled() and _has_alpaca_keys():
         try:
-            result = submit_order(order, None, results_dir)
+            submit_order(order, None, results_dir, portfolio=portfolio)
             logger.info(
-                "[AUTO] Submitted %s %s to Alpaca paper (signal: %s, id: %s)",
-                action, ticker, decision_upper, result.get("alpaca_order_id"),
+                "[AUTO] Submitted %s %s to Alpaca paper (signal: %s)",
+                action, ticker, decision_upper,
             )
         except Exception as exc:
             logger.warning(
                 "[AUTO] Submit failed for %s, falling back to pending queue: %s", ticker, exc
             )
             _stage_to_file(order, results_dir)
-        return
+        return None
 
     _stage_to_file(order, results_dir)
+    return None
 
 
 def _stage_to_file(order: dict, results_dir: Path) -> None:
@@ -165,10 +191,15 @@ def get_pending_orders(results_dir: Path) -> list[dict]:
     ]
 
 
+_MAX_AUTO_SHARES = 10  # hard cap per auto-execute order (interactive approve_trades allows up to 500)
+
+
 def submit_order(
     order: dict,
     shares_override: Optional[float],
     results_dir: Path,
+    *,
+    portfolio=None,  # portfolio_lib.loader.Portfolio — optional; enables defense-in-depth check
 ) -> dict:
     """Submit an approved order to Alpaca (paper or live) and persist the result."""
     from alpaca.trading.client import TradingClient
@@ -183,8 +214,34 @@ def submit_order(
             "  [System.Environment]::SetEnvironmentVariable('ALPACA_API_KEY', '...', 'User')"
         )
 
+    # Defense-in-depth compliance re-check (catches lockout changes since staging)
+    if portfolio is not None:
+        from portfolio_lib.compliance import check_order
+        chk = check_order(
+            order["ticker"], order["action"], portfolio,
+            trade_log_path=_trade_log_path(results_dir),
+            suggested_notional=order.get("suggested_notional"),
+        )
+        if not chk.allowed:
+            raise ValueError(
+                f"Compliance block [{chk.rule}] at submit time — {order['action']} "
+                f"{order['ticker']} rejected: {chk.reason}"
+            )
+
     paper = os.environ.get("ALPACA_PAPER", "true").strip().lower() != "false"
     qty = shares_override if shares_override is not None else order["suggested_shares"]
+
+    # Safety cap: auto-execute path (shares_override=None) must not exceed _MAX_AUTO_SHARES
+    if shares_override is None and qty > _MAX_AUTO_SHARES:
+        logger.warning(
+            "Auto-execute qty %.4f exceeds cap %d for %s — clamped",
+            qty, _MAX_AUTO_SHARES, order["ticker"],
+        )
+        qty = _MAX_AUTO_SHARES
+
+    if qty <= 0:
+        raise ValueError(f"Order quantity must be > 0, got {qty} for {order['ticker']}")
+
     side = OrderSide.BUY if order["action"] == "BUY" else OrderSide.SELL
     limit_price = order.get("limit_price")
 
