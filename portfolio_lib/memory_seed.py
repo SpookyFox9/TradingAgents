@@ -1,16 +1,12 @@
-"""Seed TradingAgentsGraph memory stores from graded signals and persona doctrine."""
+"""Build doctrine context string for injection into TradingAgentsGraph config."""
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .signal_log import read_graded_signals
 
-if TYPE_CHECKING:
-    from tradingagents.graph.trading_graph import TradingAgentsGraph
-
 logger = logging.getLogger(__name__)
 
-_DOCTRINE_SEEDS: list[tuple[str, str]] = [
+_DOCTRINE_SEEDS = [
     (
         "AI infrastructure stock with strong revenue growth, high gross margins, dominant market share, "
         "and rising capex from hyperscalers",
@@ -58,47 +54,38 @@ _DOCTRINE_SEEDS: list[tuple[str, str]] = [
 ]
 
 
-def seed_memories(ta: "TradingAgentsGraph", results_dir: Path) -> None:
-    """Populate memory stores with persona doctrine + graded past signals."""
-    logger.info("Seeding agent memories…")
+def build_doctrine_context(results_dir: Path) -> str:
+    """Return a prose doctrine block for injection into config['doctrine_context'].
 
-    # 1. Seed doctrine into bull, bear, trader, and portfolio manager memories
-    ta.bull_memory.add_situations(_DOCTRINE_SEEDS)
-    ta.bear_memory.add_situations(_DOCTRINE_SEEDS)
-    ta.trader_memory.add_situations(_DOCTRINE_SEEDS)
-    ta.portfolio_manager_memory.add_situations(_DOCTRINE_SEEDS)
-    logger.debug("Seeded %d doctrine entries into 4 memory stores", len(_DOCTRINE_SEEDS))
+    Combines static GARP/barbell rules with graded past signals from signal_log.jsonl.
+    The string is prepended to the TradingMemoryLog entries in _build_past_context().
+    """
+    parts: list[str] = []
 
-    # 2. Seed graded past signals (last 90 days) into memories
+    # Static doctrine
+    doctrine_lines = ["## Portfolio Strategy Rules"]
+    for situation, rule in _DOCTRINE_SEEDS:
+        doctrine_lines.append(f"- **Situation**: {situation}\n  **Rule**: {rule}")
+    parts.append("\n".join(doctrine_lines))
+
+    # Graded past signals
     graded = read_graded_signals(results_dir, lookback_days=90)
-    if not graded:
-        logger.debug("No graded signals yet — skipping historical seed")
-        return
+    if graded:
+        signal_lines = ["## Graded Past Signals (last 90 days)"]
+        for row in graded:
+            if row["realized_return_pct"] is None:
+                continue
+            price_str = f" @ ${row['price_at_decision']:.2f}" if row.get("price_at_decision") else ""
+            outcome_str = f"{row['realized_return_pct']:+.1f}% — {row['grade']}"
+            marker = "★ Confirmed:" if row["grade"] == "Correct" else "✗ Wrong:"
+            signal_lines.append(
+                f"- {row['date']} {row['ticker']}{price_str}: {row['decision']} → {marker} {outcome_str}"
+            )
+        if len(signal_lines) > 1:
+            parts.append("\n".join(signal_lines))
 
-    signal_seeds: list[tuple[str, str]] = []
-    for row in graded:
-        if row["realized_return_pct"] is None:
-            continue
-        situation = (
-            f"{row['ticker']} on {row['date']}: decision was {row['decision']}, "
-            f"price was ${row['price_at_decision']:.2f}"
-            if row.get("price_at_decision") else
-            f"{row['ticker']} on {row['date']}: decision was {row['decision']}"
-        )
-        outcome = (
-            f"Outcome after lookback: {row['realized_return_pct']:+.1f}% — grade: {row['grade']}."
-        )
-        if row["grade"] == "Wrong":
-            outcome += " Review what was missed. Weight contrarian signals more heavily next time."
-        elif row["grade"] == "Correct":
-            outcome += " Analysis was on target. Similar thesis can be applied with confidence."
-        signal_seeds.append((situation, outcome))
+    if not parts:
+        return ""
 
-    if signal_seeds:
-        # Weight correct signals 2× by duplicating them
-        correct = [(s, r) for s, r in signal_seeds if "Correct" in r]
-        weighted = signal_seeds + correct
-        ta.bull_memory.add_situations(weighted)
-        ta.bear_memory.add_situations(weighted)
-        ta.invest_judge_memory.add_situations(weighted)
-        logger.info("Seeded %d historical signal entries (%d weighted) into memories", len(signal_seeds), len(weighted))
+    logger.debug("Built doctrine context: %d sections", len(parts))
+    return "\n\n".join(parts)

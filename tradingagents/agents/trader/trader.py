@@ -14,7 +14,7 @@ from tradingagents.agents.utils.structured import (
 )
 
 
-def create_trader(llm, memory=None):
+def create_trader(llm):
     structured_llm = bind_structured(llm, TraderProposal, "Trader")
 
     def trader_node(state, name):
@@ -22,24 +22,10 @@ def create_trader(llm, memory=None):
         instrument_context = build_instrument_context(company_name)
         investment_plan = state["investment_plan"]
 
-        if memory is not None:
-            market_research_report = state.get("market_report", "")
-            sentiment_report = state.get("sentiment_report", "")
-            news_report = state.get("news_report", "")
-            fundamentals_report = state.get("fundamentals_report", "")
-            curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
-            past_memories = memory.get_memories(curr_situation, n_matches=2)
-        else:
-            past_memories = []
-
-        past_memory_str = ""
-        if past_memories:
-            for i, rec in enumerate(past_memories, 1):
-                past_memory_str += rec["recommendation"] + "\n\n"
-
+        past_context = state.get("past_context", "")
         memory_instruction = (
-            f" Apply lessons from past decisions to strengthen your analysis. Here are reflections from similar situations you traded in and the lessons learned: {past_memory_str.strip()}"
-            if past_memories
+            f" Apply lessons from past decisions to strengthen your analysis. Here are reflections from similar situations you traded in and the lessons learned: {past_context.strip()}"
+            if past_context
             else ""
         )
 

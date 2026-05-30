@@ -170,7 +170,7 @@ def main() -> None:
     from portfolio_lib.prices import get_price
     from portfolio_lib.macro import fetch_macro_snapshot
     from portfolio_lib.signal_log import grade_open_signals, tag_compliance_block
-    from portfolio_lib.memory_seed import seed_memories
+    from portfolio_lib.memory_seed import build_doctrine_context
     from portfolio_lib.cost_tracker import CostTracker, append_cost_log
     from portfolio_lib.discovery import suggest_tickers
     from portfolio_lib.persona import render as render_persona
@@ -224,15 +224,16 @@ def main() -> None:
 
     cost_tracker = CostTracker()
 
+    doctrine = build_doctrine_context(run_cfg.results_dir)
+    if doctrine:
+        run_cfg.llm_config["doctrine_context"] = doctrine
+
     ta = TradingAgentsGraph(
         selected_analysts=run_cfg.selected_analysts,
         debug=False,
         config=run_cfg.llm_config,
         callbacks=[cost_tracker],
     )
-
-    # Phase 5: seed memories from doctrine + past graded signals
-    seed_memories(ta, run_cfg.results_dir)
 
     results = []
     skipped: list[tuple[str, str]] = []

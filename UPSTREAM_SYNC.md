@@ -44,7 +44,7 @@ We've modified these — diff carefully before applying:
 |------|-----|
 | `tradingagents/graph/trading_graph.py` | We added `safe_ticker_component`; upstream memory refactor conflicts here |
 | `tradingagents/graph/propagation.py` | Upstream threads recursion limit through here |
-| `tradingagents/agents/utils/memory.py` | Upstream replaced BM25 with decision log (Phase 3 migration pending) |
+| `tradingagents/agents/utils/memory.py` | `TradingMemoryLog` — fully migrated in Phase 3; diff carefully before taking upstream changes |
 | `tests/conftest.py` | We restored this after upstream deleted it |
 
 ## Our Layer — Never Overwrite
@@ -100,16 +100,16 @@ bba1477  feat: structured-output Trader and Research Manager
 All three agents (PM, RM, Trader) now use `bind_structured` / `invoke_structured_or_freetext`.
 `memory` parameter kept as optional (defaults to `None`) for BM25 compat until Phase 3.
 
-### Phase 3 — Memory Migration 🔴 DEDICATED SPRINT
+### Phase 3 — Memory Migration ✅ DONE (2026-05-30)
 ```
 ebd2e12  feat: replace per-agent BM25 memory with persistent decision log
 ```
-Removes `rank-bm25`. Adds `~/.tradingagents/memory/trading_memory.md` — auto-appended
-after each run, resolved on next same-ticker run with actual returns + LLM reflection.
-
-**Decision:** Full migration — rewrite `portfolio_lib/memory_seed.py` to inject doctrine
-into the new decision log format on first run, rather than seeding BM25 each time.  
-**Conflicts:** `tradingagents/agents/utils/memory.py`, `trading_graph.py`, `reflection.py`, `setup.py`.
+Removed `rank-bm25`. All 5 BM25 stores replaced by `TradingMemoryLog` — a single
+append-only markdown log at `~/.tradingagents/memory/trading_memory.md`.  
+`memory_seed.py` rewritten as `build_doctrine_context()` — injects GARP/barbell rules
+and graded past signals as prose via `config["doctrine_context"]` on every run.  
+Deferred reflection: returns fetched from yfinance after each run; deep-thinking LLM
+writes 2-4 sentence reflection, stored alongside the decision for future runs.
 
 ---
 
@@ -150,3 +150,4 @@ git push
 | 2026-05-30 | `872b063` `2c97bad` `9482cae` `c405867` `61522e1` | UTF-8, path security, config fix, report completeness, Anthropic effort fix |
 | 2026-05-30 | `afdc6d4` `8e7654f` | LangGraph deprecation suppression, drop empty-memory placeholder from prompts |
 | 2026-05-30 | `0fda245` `bba1477` | Structured output for PM/RM/Trader; 5-tier rating; `rating.py` + `structured.py` utils; `SignalProcessor` no longer makes LLM calls |
+| 2026-05-30 | `ebd2e12` | Memory migration: BM25 → `TradingMemoryLog`; `memory_seed.py` → `build_doctrine_context()`; deferred yfinance reflection lifecycle |

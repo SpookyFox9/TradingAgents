@@ -10,32 +10,18 @@ from tradingagents.agents.utils.structured import (
 )
 
 
-def create_research_manager(llm, memory=None):
+def create_research_manager(llm):
     structured_llm = bind_structured(llm, ResearchPlan, "Research Manager")
 
     def research_manager_node(state) -> dict:
         instrument_context = build_instrument_context(state["company_of_interest"])
         history = state["investment_debate_state"].get("history", "")
-
         investment_debate_state = state["investment_debate_state"]
 
-        if memory is not None:
-            market_research_report = state.get("market_report", "")
-            sentiment_report = state.get("sentiment_report", "")
-            news_report = state.get("news_report", "")
-            fundamentals_report = state.get("fundamentals_report", "")
-            curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
-            past_memories = memory.get_memories(curr_situation, n_matches=2)
-        else:
-            past_memories = []
-
-        past_memory_str = ""
-        for i, rec in enumerate(past_memories, 1):
-            past_memory_str += rec["recommendation"] + "\n\n"
-
+        past_context = state.get("past_context", "")
         past_memory_block = (
-            f'Take into account your past mistakes on similar situations. Use these insights to refine your decision-making and ensure you are learning and improving. Present your analysis conversationally, as if speaking naturally, without special formatting. \n\nHere are your past reflections on mistakes:\n"{past_memory_str.strip()}"\n\n'
-            if past_memories
+            f'Take into account your past mistakes on similar situations. Use these insights to refine your decision-making and ensure you are learning and improving. Present your analysis conversationally, as if speaking naturally, without special formatting. \n\nHere are your past reflections on mistakes:\n"{past_context.strip()}"\n\n'
+            if past_context
             else ""
         )
 
