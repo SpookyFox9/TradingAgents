@@ -117,6 +117,18 @@ def build_context(
         "",
         active_note,
     ]
+
+    cap_warnings = []
+    for h in holdings:
+        cap = portfolio.position_caps.get(h.ticker)
+        if cap is not None and h.shares >= cap:
+            cap_warnings.append(
+                f"- **{h.ticker}**: AT MAX POSITION ({h.shares:.0f}/{cap:.0f} sh) — "
+                "do NOT recommend BUY or OVERWEIGHT; trim/exit signals only."
+            )
+    if cap_warnings:
+        lines += ["", "### POSITION LIMITS (hard caps — do not exceed)", *cap_warnings]
+
     if scale == _SCALE_TIERS[0][1]:  # small account
         lines += ["", _SMALL_ACCOUNT_SIZING_NOTE]
     return "\n".join(lines)

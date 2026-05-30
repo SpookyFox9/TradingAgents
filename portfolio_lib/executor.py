@@ -198,6 +198,34 @@ def get_pending_orders(results_dir: Path) -> list[dict]:
 _MAX_AUTO_SHARES = 10  # hard cap per auto-execute order (interactive approve_trades allows up to 500)
 
 
+def _check_conflicting_open_orders(client, ticker: str, action: str) -> None:
+    """Raise ValueError if Alpaca already has an open order on the opposite side for this ticker.
+
+    Prevents the 40310000 wash-trade rejection by catching the conflict before the API call.
+    Failures in the check itself are logged and swallowed so a bad API response never silently
+    blocks a legitimate order.
+    """
+    try:
+        from alpaca.trading.requests import GetOrdersRequest
+        req = GetOrdersRequest(status="open", symbols=[ticker])
+        open_orders = client.get_orders(filter=req)
+    except Exception as exc:
+        logger.warning("Open-order pre-check failed for %s (%s) — proceeding without check", ticker, exc)
+        return
+
+    opposite = "sell" if action == "BUY" else "buy"
+    conflicts = [
+        o for o in open_orders
+        if str(getattr(o, "side", "")).lower().endswith(opposite)
+    ]
+    if conflicts:
+        ids = ", ".join(str(getattr(o, "id", "?"))[:8] for o in conflicts)
+        raise ValueError(
+            f"wash-trade pre-check: open {opposite.upper()} order(s) for {ticker} "
+            f"({ids}) — blocked to prevent API rejection"
+        )
+
+
 def submit_order(
     order: dict,
     shares_override: Optional[float],
@@ -250,6 +278,7 @@ def submit_order(
     limit_price = order.get("limit_price")
 
     client = TradingClient(api_key, api_secret, paper=paper)
+    _check_conflicting_open_orders(client, order["ticker"], order["action"])
 
     if limit_price:
         req = LimitOrderRequest(

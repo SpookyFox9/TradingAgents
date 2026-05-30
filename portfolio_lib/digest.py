@@ -137,14 +137,12 @@ def write_digest(results: list[TickerResult], results_dir: Path, analysis_date: 
             )
         lines += ["", "---", ""]
 
-    # Discovery rejected (cut list — never made it to full analysis)
+    # Discovery rejected — split into near-misses (watchlist added) and hard cuts
     if rejected_candidates:
-        lines += ["## Discovery — Rejected by Screen", ""]
-        lines += [
-            "| Ticker | PEG | ROE | FCF Margin | Cut Reason |",
-            "|--------|-----|-----|------------|------------|",
-        ]
-        for c in rejected_candidates:
+        near_miss_list = [c for c in rejected_candidates if getattr(c, "near_miss", False)]
+        cut_list       = [c for c in rejected_candidates if not getattr(c, "near_miss", False)]
+
+        def _fmt_candidate_row(c) -> str:
             m = getattr(c, "metrics", {}) or {}
             peg = m.get("peg")
             roe = m.get("roe")
@@ -152,9 +150,27 @@ def write_digest(results: list[TickerResult], results_dir: Path, analysis_date: 
             peg_str = f"{peg:.2f}" if peg is not None else "n/a"
             roe_str = f"{roe * 100:.1f}%" if roe is not None else "n/a"
             fcf_str = f"{fcf * 100:.1f}%" if fcf is not None else "n/a"
-            verdict = getattr(c, "verdict", "")
-            lines.append(f"| {c.ticker} | {peg_str} | {roe_str} | {fcf_str} | {verdict} |")
-        lines += ["", "---", ""]
+            return f"| {c.ticker} | {peg_str} | {roe_str} | {fcf_str} | {getattr(c, 'verdict', '')} |"
+
+        if near_miss_list:
+            lines += ["## Discovery — Near Misses (added to watchlist)", ""]
+            lines += [
+                "| Ticker | PEG | ROE | FCF Margin | Note |",
+                "|--------|-----|-----|------------|------|",
+            ]
+            for c in near_miss_list:
+                lines.append(_fmt_candidate_row(c))
+            lines += ["", "---", ""]
+
+        if cut_list:
+            lines += ["## Discovery — Rejected by Screen", ""]
+            lines += [
+                "| Ticker | PEG | ROE | FCF Margin | Cut Reason |",
+                "|--------|-----|-----|------------|------------|",
+            ]
+            for c in cut_list:
+                lines.append(_fmt_candidate_row(c))
+            lines += ["", "---", ""]
 
     # Skipped tickers
     if skipped:

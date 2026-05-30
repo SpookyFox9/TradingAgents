@@ -175,6 +175,7 @@ def main() -> None:
     from portfolio_lib.discovery import suggest_tickers
     from portfolio_lib.persona import render as render_persona
     from portfolio_lib.executor import stage_pending_order
+    from portfolio_lib.loader import persist_watchlist_additions
 
     run_cfg = RunConfig.default(
         use_alpha_vantage=args.av,
@@ -366,7 +367,8 @@ def main() -> None:
             llm_config=run_cfg.llm_config,
             portfolio=portfolio,
         )
-        survivors = [c for c in all_candidates if c.passed]
+        survivors   = [c for c in all_candidates if c.passed]
+        near_misses = [c for c in all_candidates if c.near_miss and not c.passed]
         if survivors:
             print(f"\nAnalyzing {len(survivors)} survivor(s): "
                   f"{', '.join(c.ticker for c in survivors)}")
@@ -389,6 +391,26 @@ def main() -> None:
             except Exception as exc:
                 logger.error("Failed to analyze candidate %s: %s", candidate.ticker, exc, exc_info=True)
                 skipped.append((candidate.ticker, f"ERROR: {exc}"))
+
+    # Persist discovery survivors + near-misses to portfolio.json watchlist
+    if args.discover and all_candidates:
+        watchlist_additions = (
+            [c.ticker for c in survivors if not any(
+                c.ticker == h.ticker for h in portfolio.holdings
+            )]
+            + [c.ticker for c in near_misses]
+        )
+        if watchlist_additions:
+            added = persist_watchlist_additions(
+                run_cfg.portfolio_path,
+                watchlist_additions,
+                targets=None,
+            )
+            if added:
+                near_miss_tickers = {c.ticker for c in near_misses}
+                for ticker in added:
+                    label = "near-miss" if ticker in near_miss_tickers else "survivor"
+                    print(f"  Watchlist +  {ticker} ({label})")
 
     if results:
         analyzed_tickers = [r.ticker for r in results]

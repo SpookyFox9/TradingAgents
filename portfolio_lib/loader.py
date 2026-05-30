@@ -1,6 +1,7 @@
 import json
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -39,6 +40,7 @@ class Portfolio:
     strategy: str
     cash_balance: float = 0.0
     open_orders: tuple[OpenOrder, ...] = ()
+    position_caps: dict[str, float] = field(default_factory=dict)  # max shares per ticker
 
 
 def load_portfolio(path: Path) -> Portfolio:
@@ -80,6 +82,7 @@ def load_portfolio(path: Path) -> Portfolio:
         strategy=raw.get("strategy", ""),
         cash_balance=float(raw.get("cash_balance", 0.0)),
         open_orders=tuple(open_orders),
+        position_caps={k: float(v) for k, v in raw.get("position_caps", {}).items()},
     )
 
 
@@ -95,3 +98,39 @@ def iter_watchlist(portfolio: Portfolio) -> Iterator[tuple[str, Optional[float]]
     for ticker in portfolio.watch_list:
         target = portfolio.targets.get(ticker)
         yield ticker, target
+
+
+def persist_watchlist_additions(
+    portfolio_path: Path,
+    tickers: list[str],
+    targets: Optional[dict[str, float]] = None,
+) -> list[str]:
+    """Atomically append new tickers to watch_list in portfolio.json.
+
+    Skips tickers already in watch_list or holdings. Returns the list of
+    tickers that were actually added.
+    """
+    with open(portfolio_path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    existing_watch = set(raw.get("watch_list", []))
+    existing_holdings = {h["ticker"] for h in raw.get("holdings", [])}
+    added: list[str] = []
+    for ticker in tickers:
+        if ticker not in existing_watch and ticker not in existing_holdings:
+            raw.setdefault("watch_list", []).append(ticker)
+            existing_watch.add(ticker)
+            added.append(ticker)
+
+    if targets and added:
+        raw.setdefault("targets", {}).update(
+            {k: v for k, v in targets.items() if k in added}
+        )
+
+    if added:
+        tmp = portfolio_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        os.replace(tmp, portfolio_path)
+        logger.info("Persisted %d new watchlist entry(s): %s", len(added), ", ".join(added))
+
+    return added

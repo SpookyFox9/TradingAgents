@@ -56,6 +56,7 @@ class CandidateResult:
     metrics: dict[str, Any]  # live yfinance data — may be empty on fetch failure
     verdict: str     # pass 2 verdict
     passed: bool
+    near_miss: bool = False  # PEG 1.5–2.0 with strong other metrics — watchlist only
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -251,12 +252,15 @@ def suggest_tickers(
         "2. NARRATIVE: Does the rationale cite specific facts or just 'AI tailwind' story?\n"
         "3. OVERLAP: Does it duplicate a layer already covered by current holdings?\n"
         "4. MOAT: Is the competitive advantage specific and durable, not commodity?\n\n"
-        "Rules:\n"
-        "- Any metric showing n/a is a negative signal\n"
-        f"- Cap total PASS count at {n}\n"
+        "Verdict tiers:\n"
+        f"- **PASS** (`passed: true, near_miss: false`): PEG < 1.5, ROE > 15%, positive FCF, specific moat. Cap at {n} total.\n"
+        "- **NEAR MISS** (`passed: false, near_miss: true`): PEG 1.5–2.0 AND ROE > 25% AND FCF margin > 15% AND specific moat — strong on everything except valuation. Watchlist for pullback. Uncapped.\n"
+        "- **CUT** (`passed: false, near_miss: false`): Fails metrics, vague moat, duplicate layer, or n/a data without offsetting strengths.\n\n"
+        "Additional rules:\n"
+        "- n/a metrics are a negative signal; a ticker can still be NEAR MISS only if remaining metrics are uniformly strong\n"
         "- Be willing to cut the majority — quality over quantity\n\n"
         "Return ONLY valid JSON, no other text:\n"
-        '[\n  {"ticker": "XXX", "verdict": "one sentence with specific reason", "passed": true},\n  ...\n]'
+        '[\n  {"ticker": "XXX", "verdict": "one sentence with specific reason", "passed": true, "near_miss": false},\n  ...\n]'
     )
 
     logger.info("Discovery pass 2 [%s]: challenging %d candidates", sonnet_model, len(enriched))
@@ -270,39 +274,56 @@ def suggest_tickers(
     for c in enriched:
         ticker = c["ticker"]
         v      = verdict_map.get(ticker, {})
-        passed = bool(v.get("passed", False))
+        passed    = bool(v.get("passed", False))
+        near_miss = bool(v.get("near_miss", False)) and not passed
         results.append(CandidateResult(
             ticker=ticker,
             rationale=c["rationale"],
             metrics=c["metrics"],
             verdict=v.get("verdict", "No verdict returned by challenge pass"),
             passed=passed,
+            near_miss=near_miss,
         ))
 
-    results.sort(key=lambda r: (not r.passed, r.ticker))
+    # Sort: passes first, then near-misses, then cuts
+    results.sort(key=lambda r: (not r.passed, not r.near_miss, r.ticker))
 
-    survivors = [r for r in results if r.passed]
-    cuts      = [r for r in results if not r.passed]
+    survivors   = [r for r in results if r.passed]
+    near_misses = [r for r in results if r.near_miss]
+    cuts        = [r for r in results if not r.passed and not r.near_miss]
 
-    # Guarantee at least one survivor so the run is never empty
+    # Guarantee at least one survivor — prefer promoting a near_miss over a hard cut
     if not survivors and results:
-        logger.warning("All candidates cut — forcing top candidate through")
-        top      = results[0]
-        forced   = CandidateResult(
-            ticker=top.ticker, rationale=top.rationale, metrics=top.metrics,
-            verdict=top.verdict + " [forced — all others cut]", passed=True,
+        promote_src = near_misses[0] if near_misses else results[0]
+        logger.warning(
+            "All candidates cut — forcing top %s through",
+            "near-miss" if near_misses else "candidate",
         )
-        results  = [forced] + results[1:]
-        survivors, cuts = [forced], results[1:]
+        forced = CandidateResult(
+            ticker=promote_src.ticker, rationale=promote_src.rationale,
+            metrics=promote_src.metrics,
+            verdict=promote_src.verdict + " [forced — all others cut]",
+            passed=True, near_miss=False,
+        )
+        results = [forced] + [r for r in results if r.ticker != promote_src.ticker]
+        survivors   = [forced]
+        near_misses = [r for r in results if r.near_miss]
+        cuts        = [r for r in results if not r.passed and not r.near_miss]
 
-    print(f"  Pass 2 [Sonnet]  -> {len(survivors)} PASS, {len(cuts)} CUT")
+    print(f"  Pass 2 [Sonnet]  -> {len(survivors)} PASS, {len(near_misses)} NEAR MISS, {len(cuts)} CUT")
     for r in survivors:
         m = r.metrics
         tag = (f"PEG {_fmt_ratio(m.get('peg'))} | "
                f"ROE {_fmt_pct(m.get('roe'))} | "
                f"FCF {_fmt_pct(m.get('fcf_margin'))}")
-        print(f"    PASS  {r.ticker:<6} {tag} — {r.verdict}")
+        print(f"    PASS       {r.ticker:<6} {tag} — {r.verdict}")
+    for r in near_misses:
+        m = r.metrics
+        tag = (f"PEG {_fmt_ratio(m.get('peg'))} | "
+               f"ROE {_fmt_pct(m.get('roe'))} | "
+               f"FCF {_fmt_pct(m.get('fcf_margin'))}")
+        print(f"    NEAR MISS  {r.ticker:<6} {tag} — {r.verdict}")
     for r in cuts:
-        print(f"    CUT   {r.ticker:<6} — {r.verdict}")
+        print(f"    CUT        {r.ticker:<6} — {r.verdict}")
 
     return results
