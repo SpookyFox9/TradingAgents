@@ -1,6 +1,6 @@
 
 
-def create_bear_researcher(llm, memory):
+def create_bear_researcher(llm):
     def bear_node(state) -> dict:
         investment_debate_state = state["investment_debate_state"]
         history = investment_debate_state.get("history", "")
@@ -12,21 +12,15 @@ def create_bear_researcher(llm, memory):
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
 
-        curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
-        past_memories = memory.get_memories(curr_situation, n_matches=2)
-
-        past_memory_str = ""
-        for i, rec in enumerate(past_memories, 1):
-            past_memory_str += rec["recommendation"] + "\n\n"
-
+        past_context = state.get("past_context", "")
         memory_section = (
-            f"Reflections from similar situations and lessons learned: {past_memory_str.strip()}\n"
-            if past_memories
+            f"Past decisions and lessons learned:\n{past_context}\n"
+            if past_context
             else ""
         )
         memory_instruction = (
             " You must also address reflections and learn from lessons and mistakes you made in the past."
-            if past_memories
+            if past_context
             else ""
         )
 

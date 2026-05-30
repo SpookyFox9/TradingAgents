@@ -21,7 +21,7 @@ from tradingagents.agents.utils.structured import (
 )
 
 
-def create_portfolio_manager(llm, memory=None):
+def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
     def portfolio_manager_node(state) -> dict:
@@ -32,23 +32,10 @@ def create_portfolio_manager(llm, memory=None):
         research_plan = state["investment_plan"]
         trader_plan = state["trader_investment_plan"]
 
-        if memory is not None:
-            market_research_report = state.get("market_report", "")
-            news_report = state.get("news_report", "")
-            fundamentals_report = state.get("fundamentals_report", "")
-            sentiment_report = state.get("sentiment_report", "")
-            curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
-            past_memories = memory.get_memories(curr_situation, n_matches=2)
-        else:
-            past_memories = []
-
-        past_memory_str = ""
-        for i, rec in enumerate(past_memories, 1):
-            past_memory_str += rec["recommendation"] + "\n\n"
-
+        past_context = state.get("past_context", "")
         lessons_line = (
-            f"- Lessons from past decisions: **{past_memory_str.strip()}**\n"
-            if past_memories
+            f"- Lessons from past decisions:\n{past_context.strip()}\n"
+            if past_context
             else ""
         )
 

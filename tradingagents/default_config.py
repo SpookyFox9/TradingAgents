@@ -35,4 +35,6 @@ DEFAULT_CONFIG = {
     "tool_vendors": {
         # Example: "get_stock_data": "alpha_vantage",  # Override category default
     },
+    # Memory log path — append-only markdown decision log
+    "memory_log_path": "~/.tradingagents/memory/trading_memory.md",
 }
