@@ -146,6 +146,10 @@ def main() -> None:
         "--portfolio", metavar="PATH",
         help="Path to portfolio.json (default: portfolio.json in the TradingAgents directory)",
     )
+    parser.add_argument(
+        "--reset-alpaca", action="store_true", dest="reset_alpaca",
+        help="Wipe the Alpaca paper account and reset it to the current Fidelity baseline, then exit",
+    )
     args = parser.parse_args()
 
     if args.discover_only and not args.discover:
@@ -179,6 +183,20 @@ def main() -> None:
         portfolio_path=Path(args.portfolio) if args.portfolio else None,
     )
     portfolio = load_portfolio(run_cfg.portfolio_path)
+
+    if args.reset_alpaca:
+        from portfolio_lib.alpaca_sync import reset_to_fidelity
+        print(f"Resetting Alpaca paper account to Fidelity baseline…")
+        if args.dry_run:
+            print("[DRY RUN] Would cancel all Alpaca orders, close all positions, "
+                  f"and write alpaca_portfolio.json from {run_cfg.portfolio_path.name}.")
+        else:
+            reset_to_fidelity(
+                run_cfg.portfolio_path,
+                run_cfg.alpaca_portfolio_path,
+            )
+            print(f"Done. alpaca_portfolio.json written to {run_cfg.alpaca_portfolio_path}")
+        return
 
     if args.dry_run:
         print(f"Dry run OK. Portfolio loaded: {len(portfolio.holdings)} holdings, {len(portfolio.watch_list)} watchlist.")
@@ -283,6 +301,7 @@ def main() -> None:
                     report_path=report_path,
                     results_dir=run_cfg.results_dir,
                     portfolio=portfolio,
+                    alpaca_portfolio_path=run_cfg.alpaca_portfolio_path,
                 )
                 if blocked_rule:
                     tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)
@@ -321,6 +340,7 @@ def main() -> None:
                     report_path=report_path,
                     results_dir=run_cfg.results_dir,
                     portfolio=portfolio,
+                    alpaca_portfolio_path=run_cfg.alpaca_portfolio_path,
                 )
                 if blocked_rule:
                     tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)

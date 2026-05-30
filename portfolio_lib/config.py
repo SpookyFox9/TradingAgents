@@ -21,6 +21,7 @@ class RunConfig:
     analysis_date: str       # YYYY-MM-DD  — used for propagate() and signal log
     run_timestamp: str       # YYYY-MM-DD_HHmm — used for output filenames only
     portfolio_path: Path
+    alpaca_portfolio_path: Path  # tracks bot's paper-account positions
     results_dir: Path
     use_alpha_vantage: bool
     deep_mode: bool
@@ -64,6 +65,7 @@ class RunConfig:
             analysis_date=now.strftime("%Y-%m-%d"),
             run_timestamp=now.strftime("%Y-%m-%d_%H%M"),
             portfolio_path=resolved_portfolio,
+            alpaca_portfolio_path=resolved_portfolio.parent / "alpaca_portfolio.json",
             results_dir=resolved_portfolio.parent / "Analysis",
             use_alpha_vantage=use_alpha_vantage,
             deep_mode=deep_mode,

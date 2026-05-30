@@ -77,7 +77,8 @@ def stage_pending_order(
     report_path: Optional[Path],
     results_dir: Path,
     *,
-    portfolio=None,  # portfolio_lib.loader.Portfolio — optional for backwards compat
+    portfolio=None,            # portfolio_lib.loader.Portfolio — optional for backwards compat
+    alpaca_portfolio_path: Optional[Path] = None,  # if set, update after auto-execute
 ) -> Optional[str]:
     """Stage or auto-execute an order depending on paper/live mode.
 
@@ -153,11 +154,14 @@ def stage_pending_order(
 
     if _auto_execute_enabled() and _has_alpaca_keys():
         try:
-            submit_order(order, None, results_dir, portfolio=portfolio)
+            result = submit_order(order, None, results_dir, portfolio=portfolio)
             logger.info(
                 "[AUTO] Submitted %s %s to Alpaca paper (signal: %s)",
                 action, ticker, decision_upper,
             )
+            if alpaca_portfolio_path is not None:
+                from portfolio_lib.alpaca_sync import update_after_trade
+                update_after_trade(alpaca_portfolio_path, result)
         except Exception as exc:
             logger.warning(
                 "[AUTO] Submit failed for %s, falling back to pending queue: %s", ticker, exc
