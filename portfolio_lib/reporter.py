@@ -54,7 +54,8 @@ def write_ticker_report(
 
     if result.kind == TickerKind.HOLDING:
         current = get_price(result.ticker)
-        assert result.entry is not None  # iter_holdings guarantees this for HOLDING kind
+        if result.entry is None:
+            raise ValueError(f"HOLDING result for {result.ticker} has no entry price")
         cost_basis = result.entry * result.shares
         pnl = ((current - result.entry) * result.shares) if current is not None else None
         pnl_str = f"${pnl:+,.2f}" if pnl is not None else "n/a"

@@ -115,9 +115,8 @@ def reset_to_fidelity(
         )
         return
 
-    alpaca_portfolio_path.write_text(
-        json.dumps(alpaca_data, indent=2), encoding="utf-8"
-    )
+    from .io_utils import atomic_write_text
+    atomic_write_text(alpaca_portfolio_path, json.dumps(alpaca_data, indent=2))
     logger.info(
         "alpaca_portfolio.json written — %d holdings, cash $%.2f",
         len(holdings), float(fidelity_data.get("cash_balance", 0.0)),
@@ -143,9 +142,8 @@ def load_alpaca_portfolio(
             "last_updated": datetime.now().strftime("%Y-%m-%d"),
             "_source": "auto-initialised from portfolio.json",
         }
-        alpaca_portfolio_path.write_text(
-            json.dumps(alpaca_data, indent=2), encoding="utf-8"
-        )
+        from .io_utils import atomic_write_text
+        atomic_write_text(alpaca_portfolio_path, json.dumps(alpaca_data, indent=2))
         return alpaca_data
 
     return json.loads(alpaca_portfolio_path.read_text(encoding="utf-8"))
@@ -210,9 +208,8 @@ def update_after_trade(alpaca_portfolio_path: Path, order: dict) -> None:
     data["holdings"]     = holdings
     data["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
-    alpaca_portfolio_path.write_text(
-        json.dumps(data, indent=2), encoding="utf-8"
-    )
+    from .io_utils import atomic_write_text
+    atomic_write_text(alpaca_portfolio_path, json.dumps(data, indent=2))
     logger.info(
         "alpaca_portfolio.json: %s %s %.4f sh @ $%.2f → cash $%.2f",
         action, ticker, shares, price, data["cash_balance"],

@@ -43,7 +43,8 @@ def _current_price(ticker: str) -> Optional[float]:
         if hist.empty:
             return None
         return float(hist["Close"].iloc[-1])
-    except Exception:
+    except Exception as exc:
+        logger.debug("_current_price(%s) failed: %s", ticker, exc)
         return None
 
 
@@ -53,7 +54,8 @@ def _sma(ticker: str, window: int) -> Optional[float]:
         if len(hist) < window:
             return None
         return float(hist["Close"].tail(window).mean())
-    except Exception:
+    except Exception as exc:
+        logger.debug("_sma(%s, %d) failed: %s", ticker, window, exc)
         return None
 
 
@@ -65,7 +67,8 @@ def _one_month_return(ticker: str) -> Optional[float]:
         start = float(hist["Close"].iloc[-21])
         end = float(hist["Close"].iloc[-1])
         return (end - start) / start * 100 if start else None
-    except Exception:
+    except Exception as exc:
+        logger.debug("_one_month_return(%s) failed: %s", ticker, exc)
         return None
 
 

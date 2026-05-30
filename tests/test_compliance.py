@@ -177,6 +177,25 @@ def test_r5_buy_blocked_when_at_cap():
     assert "position cap" in result2.reason
 
 
+def test_r5b_uses_market_value_when_prices_provided():
+    # At cost basis: NVDA $200 × 1sh / ($5000 + $200) = 3.8% — passes
+    # At market $2500: NVDA $2500 × 1sh / ($5000 + $2500) = 33% — blocked
+    h = _holding("NVDA", entry=200.0, shares=1.0)
+    p = _portfolio(h, cash=5_000.0)
+    result = check_order("NVDA", "BUY", p, today=TODAY, prices={"NVDA": 2500.0})
+    assert not result.allowed
+    assert result.rule == "R5"
+    assert "market value" in result.reason
+
+
+def test_r5b_falls_back_to_cost_basis_when_prices_missing():
+    # Same position — without prices kwarg, falls back to cost basis (3.8% < 30%)
+    h = _holding("NVDA", entry=200.0, shares=1.0)
+    p = _portfolio(h, cash=5_000.0)
+    result = check_order("NVDA", "BUY", p, today=TODAY)
+    assert result.allowed  # cost basis weight 3.8% < 30%
+
+
 def test_r5_does_not_apply_to_sell():
     h = _holding("NVDA", entry=2_200.0, shares=5.0)
     p = _portfolio(h, cash=1_000.0)

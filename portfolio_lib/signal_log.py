@@ -102,7 +102,8 @@ def tag_compliance_block(
         except (json.JSONDecodeError, KeyError):
             pass
         updated.append(line)
-    log.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    from .io_utils import atomic_write_text
+    atomic_write_text(log, "\n".join(updated) + "\n")
     logger.debug("Tagged signal %s %s as compliance-blocked (%s)", analysis_date, ticker, rule_code)
 
 
@@ -181,7 +182,8 @@ def grade_open_signals(results_dir: Path, get_price_fn) -> int:
         graded_count += 1
         logger.info("Graded %s %s %s: %.1f%% → %s", row["date"], row["ticker"], decision, realized_pct, grade)
 
-    log.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    from .io_utils import atomic_write_text
+    atomic_write_text(log, "\n".join(updated) + "\n")
     return graded_count
 
 

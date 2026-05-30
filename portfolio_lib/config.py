@@ -26,6 +26,7 @@ class RunConfig:
     use_alpha_vantage: bool
     deep_mode: bool
     analyst_preset: str
+    # Mutable dict — callers MUST copy via {**run_cfg.llm_config, ...} before per-call modification.
     llm_config: dict = field(compare=False)
 
     @property

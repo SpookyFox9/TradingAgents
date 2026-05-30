@@ -86,6 +86,7 @@ def check_order(
     today: Optional[date] = None,
     trade_log_path: Optional[Path] = None,
     suggested_notional: Optional[float] = None,
+    prices: Optional[dict] = None,
 ) -> ComplianceResult:
     """Return ComplianceResult indicating whether the order is compliant.
 
@@ -157,17 +158,25 @@ def check_order(
                 False, "R5",
                 f"{ticker} at max position ({holding.shares:.0f}/{share_cap:.0f} sh) — BUY blocked",
             )
-        # R5b — portfolio concentration cap (30% of total value)
-        cost_basis = sum(h.entry * h.shares for h in portfolio.holdings if h.entry > 0)
-        portfolio_value = portfolio.cash_balance + cost_basis
+        # R5b — portfolio concentration cap (30% of total value, using market prices where available)
+        _mkt = prices or {}
+
+        def _position_value(h) -> float:
+            mkt = _mkt.get(h.ticker.upper())
+            return (mkt if mkt is not None else h.entry) * h.shares
+
+        portfolio_value = portfolio.cash_balance + sum(
+            _position_value(h) for h in portfolio.holdings if h.entry > 0
+        )
         if portfolio_value > 0:
-            current_weight = (holding.entry * holding.shares) / portfolio_value
+            current_weight = _position_value(holding) / portfolio_value
             if current_weight >= _MAX_POSITION_PCT:
+                value_source = "market value" if _mkt.get(ticker) else "cost basis"
                 return ComplianceResult(
                     False, "R5",
                     f"{ticker} position cap reached — current weight "
                     f"{current_weight:.1%} ≥ {_MAX_POSITION_PCT:.0%} of portfolio "
-                    f"(${portfolio_value:,.0f}) — BUY blocked",
+                    f"(${portfolio_value:,.0f}, {value_source}) — BUY blocked",
                 )
 
     # R6 — T+1 cash settlement: block BUY exceeding settled cash (cash account only)

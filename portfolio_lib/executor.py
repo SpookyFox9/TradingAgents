@@ -43,7 +43,8 @@ def _load_orders(path: Path) -> list[dict]:
 
 
 def _save_orders(path: Path, orders: list[dict]) -> None:
-    path.write_text(json.dumps(orders, indent=2), encoding="utf-8")
+    from .io_utils import atomic_write_text
+    atomic_write_text(path, json.dumps(orders, indent=2))
 
 
 def _is_paper() -> bool:
@@ -79,6 +80,7 @@ def stage_pending_order(
     *,
     portfolio=None,            # portfolio_lib.loader.Portfolio — optional for backwards compat
     alpaca_portfolio_path: Optional[Path] = None,  # if set, update after auto-execute
+    prices: Optional[dict] = None,  # current market prices for R5b concentration check
 ) -> Optional[str]:
     """Stage or auto-execute an order depending on paper/live mode.
 
@@ -120,6 +122,7 @@ def stage_pending_order(
             ticker, action, portfolio,
             trade_log_path=_trade_log_path(results_dir),
             suggested_notional=suggested_notional,
+            prices=prices,
         )
         if not result.allowed:
             logger.warning(
@@ -154,7 +157,7 @@ def stage_pending_order(
 
     if _auto_execute_enabled() and _has_alpaca_keys():
         try:
-            result = submit_order(order, None, results_dir, portfolio=portfolio)
+            result = submit_order(order, None, results_dir, portfolio=portfolio, prices=prices)
             logger.info(
                 "[AUTO] Submitted %s %s to Alpaca paper (signal: %s)",
                 action, ticker, decision_upper,
@@ -232,6 +235,7 @@ def submit_order(
     results_dir: Path,
     *,
     portfolio=None,  # portfolio_lib.loader.Portfolio — optional; enables defense-in-depth check
+    prices: Optional[dict] = None,  # current market prices for R5b re-check at submit time
 ) -> dict:
     """Submit an approved order to Alpaca (paper or live) and persist the result."""
     from alpaca.trading.client import TradingClient
@@ -253,6 +257,7 @@ def submit_order(
             order["ticker"], order["action"], portfolio,
             trade_log_path=_trade_log_path(results_dir),
             suggested_notional=order.get("suggested_notional"),
+            prices=prices,
         )
         if not chk.allowed:
             raise ValueError(
