@@ -238,6 +238,9 @@ def main() -> None:
 
     results = []
     skipped: list[tuple[str, str]] = []
+    all_candidates: list = []
+    survivors: list = []
+    near_misses: list = []
 
     # Determine which tickers to analyze from each pool.
     # When --watchlist + --tickers are both given, route each ticker to the
@@ -352,7 +355,6 @@ def main() -> None:
                 skipped.append((ticker, f"ERROR: {exc}"))
 
     # ── Discovery pass (optional) ──────────────────────────────────────────────
-    all_candidates = []
     if args.discover and (not args.watchlist or args.discover_only):
         held_tickers      = [h.ticker for h in portfolio.holdings]
         watchlist_tickers = [t for t, _ in iter_watchlist(portfolio)]
