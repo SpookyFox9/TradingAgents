@@ -146,7 +146,7 @@ def test_valid_nvda_buy_passes_compliance(tmp_path):
 
     submitted_orders = []
 
-    def fake_submit(order, shares_override, results_dir, *, portfolio=None):
+    def fake_submit(order, shares_override, results_dir, *, portfolio=None, prices=None):
         submitted_orders.append(order)
         return {**order, "alpaca_order_id": "fake-id", "status": "submitted"}
 
