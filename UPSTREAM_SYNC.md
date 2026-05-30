@@ -86,12 +86,11 @@ Worth picking up immediately:
 
 ## Pending Phases
 
-### Phase 1 — Easy wins ✅ READY
+### Phase 1 — Easy wins ✅ DONE (2026-05-30)
 ```
 afdc6d4  chore: suppress upstream langgraph allowed_objects deprecation noise
 8e7654f  fix: drop past-memory directive and placeholder from agent prompts when memory is empty
 ```
-Cherry-pick both. ~30 min.
 
 ### Phase 2 — Structured Output 🔶 REVIEW FIRST
 ```
@@ -151,3 +150,4 @@ git push
 | Date | SHAs taken | Notes |
 |------|-----------|-------|
 | 2026-05-30 | `872b063` `2c97bad` `9482cae` `c405867` `61522e1` | UTF-8, path security, config fix, report completeness, Anthropic effort fix |
+| 2026-05-30 | `afdc6d4` `8e7654f` | LangGraph deprecation suppression, drop empty-memory placeholder from prompts |
