@@ -92,15 +92,13 @@ afdc6d4  chore: suppress upstream langgraph allowed_objects deprecation noise
 8e7654f  fix: drop past-memory directive and placeholder from agent prompts when memory is empty
 ```
 
-### Phase 2 — Structured Output 🔶 REVIEW FIRST
+### Phase 2 — Structured Output ✅ DONE (2026-05-30)
 ```
 0fda245  feat: structured-output Portfolio Manager + 5-tier rating consistency
 bba1477  feat: structured-output Trader and Research Manager
 ```
-Changes how `final_trade_decision` is formatted. Before taking:
-1. Read diffs on both commits
-2. Verify `portfolio_lib/analyzer.py` signal extraction still works (`result.decision`)
-3. Run `test_analyzer_integration.py` after applying
+All three agents (PM, RM, Trader) now use `bind_structured` / `invoke_structured_or_freetext`.
+`memory` parameter kept as optional (defaults to `None`) for BM25 compat until Phase 3.
 
 ### Phase 3 — Memory Migration 🔴 DEDICATED SPRINT
 ```
@@ -151,3 +149,4 @@ git push
 |------|-----------|-------|
 | 2026-05-30 | `872b063` `2c97bad` `9482cae` `c405867` `61522e1` | UTF-8, path security, config fix, report completeness, Anthropic effort fix |
 | 2026-05-30 | `afdc6d4` `8e7654f` | LangGraph deprecation suppression, drop empty-memory placeholder from prompts |
+| 2026-05-30 | `0fda245` `bba1477` | Structured output for PM/RM/Trader; 5-tier rating; `rating.py` + `structured.py` utils; `SignalProcessor` no longer makes LLM calls |
