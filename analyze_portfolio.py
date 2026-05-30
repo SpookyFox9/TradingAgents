@@ -394,13 +394,19 @@ def main() -> None:
                 logger.error("Failed to analyze candidate %s: %s", candidate.ticker, exc, exc_info=True)
                 skipped.append((candidate.ticker, f"ERROR: {exc}"))
 
-    # Persist discovery survivors + near-misses to portfolio.json watchlist
+    # Persist discovery survivors + near-misses to portfolio.json watchlist.
+    # Gate: skip any candidate whose yfinance metrics are entirely n/a — those
+    # are likely delisted or mis-named tickers and have no business on the watchlist.
+    def _has_valid_metrics(c) -> bool:
+        return any(v is not None for v in c.metrics.values()) if c.metrics else False
+
     if args.discover and all_candidates:
         watchlist_additions = (
-            [c.ticker for c in survivors if not any(
-                c.ticker == h.ticker for h in portfolio.holdings
-            )]
-            + [c.ticker for c in near_misses]
+            [c.ticker for c in survivors
+             if _has_valid_metrics(c) and not any(
+                 c.ticker == h.ticker for h in portfolio.holdings
+             )]
+            + [c.ticker for c in near_misses if _has_valid_metrics(c)]
         )
         if watchlist_additions:
             added = persist_watchlist_additions(
