@@ -148,8 +148,16 @@ def check_order(
                 f"{ticker} SELL blocked — no open position (would create a short)",
             )
 
-    # R5 — Position concentration cap: block BUY above 30 % of portfolio
+    # R5 — Position cap: block BUY at or above explicit share cap OR 30% portfolio weight
     if action == "BUY" and holding and holding.entry > 0:
+        # R5a — explicit per-ticker share cap from portfolio.position_caps
+        share_cap = getattr(portfolio, "position_caps", {}).get(ticker)
+        if share_cap is not None and holding.shares >= share_cap:
+            return ComplianceResult(
+                False, "R5",
+                f"{ticker} at max position ({holding.shares:.0f}/{share_cap:.0f} sh) — BUY blocked",
+            )
+        # R5b — portfolio concentration cap (30% of total value)
         cost_basis = sum(h.entry * h.shares for h in portfolio.holdings if h.entry > 0)
         portfolio_value = portfolio.cash_balance + cost_basis
         if portfolio_value > 0:
