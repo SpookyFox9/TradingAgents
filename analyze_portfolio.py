@@ -168,6 +168,7 @@ def _run_holdings_loop(ta, portfolio, run_holdings, prices, macro_snapshot, run_
                 portfolio=portfolio,
                 alpaca_portfolio_path=run_cfg.alpaca_portfolio_path,
                 prices=prices,
+                trader_plan_text=result.trader_investment_plan,
             )
             if blocked_rule:
                 tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)
@@ -217,6 +218,7 @@ def _run_watchlist_loop(ta, portfolio, run_watchlist, prices, macro_snapshot, ru
                 results_dir=run_cfg.results_dir,
                 portfolio=portfolio,
                 alpaca_portfolio_path=run_cfg.alpaca_portfolio_path,
+                trader_plan_text=result.trader_investment_plan,
                 prices=prices,
             )
             if blocked_rule:
@@ -397,6 +399,17 @@ def main() -> None:
             )
             print(f"Done. alpaca_portfolio.json written to {run_cfg.alpaca_portfolio_path}")
         return
+
+    # Reconcile alpaca_portfolio.json with live Alpaca state before compliance checks run.
+    # Silently skipped when Alpaca keys are absent (local/CI environments).
+    try:
+        from portfolio_lib.alpaca_sync import reconcile_with_alpaca
+        reconcile_with_alpaca(run_cfg.alpaca_portfolio_path, run_cfg.portfolio_path)
+    except Exception as exc:
+        logger.warning(
+            "Alpaca portfolio reconciliation skipped: %s — using cached alpaca_portfolio.json",
+            exc,
+        )
 
     if args.dry_run:
         print(f"Dry run OK. Portfolio loaded: {len(portfolio.holdings)} holdings, {len(portfolio.watch_list)} watchlist.")

@@ -22,7 +22,34 @@ ACTIONABLE_BUY = {"BUY", "OVERWEIGHT"}
 ACTIONABLE_SELL = {"SELL", "UNDERWEIGHT"}
 ACTIONABLE = ACTIONABLE_BUY | ACTIONABLE_SELL
 
-_DEFAULT_POSITION_PCT = 0.10  # suggest 10% of cash per new position by default
+_DEFAULT_POSITION_PCT = 0.10  # fallback sizing — 10% of cash per new position
+_SHARE_REC_RE = re.compile(
+    r'\*{0,2}Position\s+Sizing\*{0,2}[^:\n]*:\s*(\d+)\s+shares?'
+    r'|(?:^|\n)\s*(?:Buy|Enter|Purchase)\s+(\d+)\s+shares?\s+of\s+[A-Z]{1,5}',
+    re.IGNORECASE,
+)
+
+
+def _extract_llm_share_recommendation(text: str) -> Optional[float]:
+    """Parse the LLM trader plan for an explicit share count.
+
+    Matches '**Position Sizing**: N shares ...' (primary) or
+    'Buy N shares of TICKER' (fallback). Returns None if unparseable or
+    the count is outside [1, _MAX_AUTO_SHARES].
+    """
+    if not text:
+        return None
+    m = _SHARE_REC_RE.search(text)
+    if not m:
+        return None
+    raw = m.group(1) or m.group(2)
+    try:
+        count = int(raw)
+        if 1 <= count <= _MAX_AUTO_SHARES:
+            return float(count)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _pending_path(results_dir: Path) -> Path:
@@ -81,6 +108,7 @@ def stage_pending_order(
     portfolio=None,            # portfolio_lib.loader.Portfolio — optional for backwards compat
     alpaca_portfolio_path: Optional[Path] = None,  # if set, update after auto-execute
     prices: Optional[dict] = None,  # current market prices for R5b concentration check
+    trader_plan_text: Optional[str] = None,  # LLM trader plan — used to extract share recommendation
 ) -> Optional[str]:
     """Stage or auto-execute an order depending on paper/live mode.
 
@@ -108,18 +136,45 @@ def stage_pending_order(
         return None
 
     action = "BUY" if decision_upper in ACTIONABLE_BUY else "SELL"
-    price_for_sizing = current_price or target_price or 0.0
-    suggested_notional = round(cash_balance * _DEFAULT_POSITION_PCT, 2)
-    suggested_shares = (
-        round(suggested_notional / price_for_sizing, 4) if price_for_sizing > 0 else 0.0
+    entry_type = (
+        portfolio.entry_types.get(ticker, "pullback") if portfolio is not None else "pullback"
     )
-    limit_price = (target_price if (action == "BUY" and target_price) else current_price)
+    price_for_sizing = current_price or target_price or 0.0
+    llm_shares = _extract_llm_share_recommendation(trader_plan_text)
+    if llm_shares is not None and price_for_sizing > 0:
+        suggested_shares = min(llm_shares, _MAX_AUTO_SHARES)
+        suggested_notional = round(suggested_shares * price_for_sizing, 2)
+    else:
+        suggested_notional = round(cash_balance * _DEFAULT_POSITION_PCT, 2)
+        suggested_shares = (
+            round(suggested_notional / price_for_sizing, 4) if price_for_sizing > 0 else 0.0
+        )
+    # pullback: limit at target (wait for the dip to fill); breakout: limit at current price
+    limit_price = (
+        target_price
+        if (action == "BUY" and target_price and entry_type == "pullback")
+        else current_price
+    )
+
+    # For auto-execute, use Alpaca portfolio state so R5/R6 reflect actual paper-account
+    # positions and cash rather than the Fidelity baseline. Doctrine fields (caps, rules)
+    # are always inherited from the Fidelity portfolio.
+    compliance_portfolio = (
+        _build_alpaca_compliance_portfolio(alpaca_portfolio_path, portfolio)
+        if (
+            portfolio is not None
+            and alpaca_portfolio_path is not None
+            and _auto_execute_enabled()
+            and _has_alpaca_keys()
+        )
+        else portfolio
+    )
 
     # Compliance pre-flight check
-    if portfolio is not None:
+    if compliance_portfolio is not None:
         from portfolio_lib.compliance import check_order
         result = check_order(
-            ticker, action, portfolio,
+            ticker, action, compliance_portfolio,
             trade_log_path=_trade_log_path(results_dir),
             suggested_notional=suggested_notional,
             prices=prices,
@@ -156,6 +211,12 @@ def stage_pending_order(
     }
 
     if _auto_execute_enabled() and _has_alpaca_keys():
+        if _open_same_side_order_exists(ticker, action):
+            logger.info(
+                "[AUTO] Skipping %s %s — open same-side order already exists on Alpaca",
+                action, ticker,
+            )
+            return None
         try:
             result = submit_order(order, None, results_dir, portfolio=portfolio, prices=prices)
             logger.info(
@@ -199,6 +260,70 @@ def get_pending_orders(results_dir: Path) -> list[dict]:
 
 
 _MAX_AUTO_SHARES = 10  # hard cap per auto-execute order (interactive approve_trades allows up to 500)
+
+
+def _build_alpaca_compliance_portfolio(alpaca_portfolio_path: Path, fidelity_portfolio):
+    """Return a Portfolio for compliance checks when auto-executing on Alpaca paper.
+
+    Uses Alpaca's holdings and cash balance (actual paper-account state) so that
+    R5 concentration checks and R6 cash checks reflect what Alpaca actually holds,
+    not the Fidelity baseline. Doctrine fields (position_caps, entry_types, tax-loss
+    rules) are always taken from the Fidelity portfolio so they stay consistent.
+
+    Falls back to fidelity_portfolio if the Alpaca file does not exist or cannot be
+    parsed — this keeps compliance running rather than silently skipping it.
+    """
+    if not alpaca_portfolio_path.exists():
+        return fidelity_portfolio
+    try:
+        from portfolio_lib.loader import load_portfolio, Portfolio
+        alpaca = load_portfolio(alpaca_portfolio_path)
+        return Portfolio(
+            holdings=alpaca.holdings,
+            watch_list=alpaca.watch_list,
+            targets=alpaca.targets if alpaca.targets else fidelity_portfolio.targets,
+            strategy=alpaca.strategy,
+            cash_balance=alpaca.cash_balance,
+            open_orders=alpaca.open_orders,
+            position_caps=fidelity_portfolio.position_caps,
+            entry_types=fidelity_portfolio.entry_types,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not load Alpaca portfolio for compliance (%s) — using Fidelity portfolio",
+            exc,
+        )
+        return fidelity_portfolio
+
+
+def _open_same_side_order_exists(ticker: str, action: str) -> bool:
+    """Return True if Alpaca already has an open order on the same side for this ticker.
+
+    Used by the auto-execute path to prevent duplicate DAY orders when the pipeline
+    runs multiple times in one session (e.g. holdings run at 07:30, watchlist at 09:20).
+    Failures are logged and swallowed so a bad API response never silently blocks a
+    legitimate first order.
+    """
+    try:
+        from alpaca.trading.client import TradingClient
+        from alpaca.trading.requests import GetOrdersRequest
+        client = TradingClient(
+            os.environ.get("ALPACA_API_KEY", "").strip(),
+            os.environ.get("ALPACA_API_SECRET", "").strip(),
+            paper=_is_paper(),
+        )
+        req = GetOrdersRequest(status="open", symbols=[ticker])
+        open_orders = client.get_orders(filter=req)
+        same = "buy" if action == "BUY" else "sell"
+        return any(
+            str(getattr(o, "side", "")).lower().endswith(same)
+            for o in open_orders
+        )
+    except Exception as exc:
+        logger.warning(
+            "Same-side open-order check failed for %s (%s) — proceeding", ticker, exc
+        )
+        return False
 
 
 def _check_conflicting_open_orders(client, ticker: str, action: str) -> None:

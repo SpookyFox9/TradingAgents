@@ -41,6 +41,77 @@ def _alpaca_paper_client():
     return TradingClient(api_key, api_secret, paper=True)
 
 
+def reconcile_with_alpaca(alpaca_portfolio_path: Path, fidelity_path: Path) -> None:
+    """Sync alpaca_portfolio.json with the live Alpaca paper account.
+
+    Fetches current positions and cash from the Alpaca API, then rewrites
+    alpaca_portfolio.json with live values. Fidelity doctrine fields
+    (position_caps, entry_types, targets, watch_list, tax-loss roles,
+    wash-sale lockouts) are always sourced from portfolio.json.
+
+    Compliance-only Fidelity holdings (warrants, tax-loss holds) that are
+    never purchased on Alpaca are preserved so that R2/R3 still fire correctly.
+
+    Raises RuntimeError if ALPACA_API_KEY / ALPACA_API_SECRET are not set.
+    All other exceptions propagate; the caller should wrap in try/except and
+    fall back to the cached alpaca_portfolio.json.
+    """
+    client = _alpaca_paper_client()
+
+    account = client.get_account()
+    live_cash = float(account.cash)
+
+    alpaca_positions = client.get_all_positions()
+
+    fidelity_data = json.loads(fidelity_path.read_text(encoding="utf-8"))
+    fidelity_holdings_map = {h["ticker"]: h for h in fidelity_data.get("holdings", [])}
+
+    # Build reconciled holdings from live Alpaca positions
+    live_tickers: set[str] = set()
+    holdings: list[dict] = []
+    for pos in alpaca_positions:
+        ticker = str(pos.symbol).upper()
+        live_tickers.add(ticker)
+        holding: dict = {
+            "ticker": ticker,
+            "entry": round(float(pos.avg_entry_price), 4),
+            "shares": round(float(pos.qty), 4),
+        }
+        # Copy doctrine fields from Fidelity where present (roles, lockouts, lot info, etc.)
+        fid = fidelity_holdings_map.get(ticker, {})
+        for field in (
+            "acquired_date", "broker", "lots",
+            "role", "harvest_target_date", "lot_method",
+            "wash_sale_lockout_days", "wash_sale_lockout_until",
+        ):
+            if field in fid:
+                holding[field] = fid[field]
+        holdings.append(holding)
+
+    # Preserve Fidelity-only holdings (warrants, tax-loss holds) that are never purchased
+    # on Alpaca. These must remain visible so R2/R3 compliance rules still fire.
+    for ticker, fid_h in fidelity_holdings_map.items():
+        if ticker not in live_tickers:
+            holdings.append(fid_h)
+
+    reconciled: dict = {
+        **fidelity_data,            # carries position_caps, entry_types, targets, watch_list
+        "holdings": holdings,
+        "cash_balance": live_cash,
+        "open_orders": [],
+        "last_updated": datetime.now().strftime("%Y-%m-%d"),
+        "_reconciled_at": datetime.now().isoformat(),
+        "_source": "reconciled from Alpaca paper account",
+    }
+
+    from .io_utils import atomic_write_text
+    atomic_write_text(alpaca_portfolio_path, json.dumps(reconciled, indent=2))
+    logger.info(
+        "alpaca_portfolio.json reconciled — %d live position(s), cash $%.2f",
+        len(live_tickers), live_cash,
+    )
+
+
 def reset_to_fidelity(
     fidelity_path: Path,
     alpaca_portfolio_path: Path,

@@ -8,6 +8,10 @@ R3  Warrant             — block all sides on warrants (zero entry or W/WS/WT s
 R4  No-position SELL    — block SELL when ticker is not in holdings (prevents short)
 R5  Position cap        — block BUY pushing a single ticker above 30 % of portfolio
 R6  Cash settlement     — block BUY whose notional exceeds settled cash (T+1, cash account)
+R7  Entry price gate    — block BUY when the watchlist price condition is not met:
+                          pullback entries: current must be within 3% of (or below) target
+                          breakout entries: current must be at or above trigger AND within
+                          3% above trigger (stale if price has moved too far past trigger)
 
 PDT (Pattern Day Trader) rule is NOT enforced — this is a cash account; PDT applies
 only to margin accounts.
@@ -194,6 +198,38 @@ def check_order(
                 f"settled cash ${settled_cash:,.2f} "
                 f"(${unsettled:,.2f} unsettled from recent sells; T+1 rule)",
             )
+
+    # R7 — Entry price gate: block BUY when the watchlist target condition is not satisfied.
+    # Only fires when the ticker has an explicit target in portfolio.targets and the
+    # current market price is available via the prices dict.
+    if action == "BUY" and prices is not None:
+        target = portfolio.targets.get(ticker)
+        if target is not None:
+            current = prices.get(ticker)
+            if current is not None:
+                entry_type = portfolio.entry_types.get(ticker, "pullback")
+                if entry_type == "pullback" and current > target * 1.03:
+                    return ComplianceResult(
+                        False, "R7",
+                        f"{ticker} pullback entry not met — current ${current:.2f} is "
+                        f"{(current / target - 1) * 100:.1f}% above target ${target:.2f} "
+                        "(>3% tolerance) — BUY blocked until price pulls back",
+                    )
+                if entry_type == "breakout":
+                    if current < target:
+                        return ComplianceResult(
+                            False, "R7",
+                            f"{ticker} breakout not confirmed — current ${current:.2f} is "
+                            f"below breakout trigger ${target:.2f} "
+                            "— BUY blocked until price confirms at or above trigger",
+                        )
+                    if current > target * 1.03:
+                        return ComplianceResult(
+                            False, "R7",
+                            f"{ticker} breakout entry stale — current ${current:.2f} is "
+                            f"{(current / target - 1) * 100:.1f}% above trigger ${target:.2f} "
+                            "(>3% chase window) — update target in portfolio.json to re-enable",
+                        )
 
     return ComplianceResult(True, "", "")
 

@@ -41,6 +41,7 @@ class Portfolio:
     cash_balance: float = 0.0
     open_orders: tuple[OpenOrder, ...] = ()
     position_caps: dict[str, float] = field(default_factory=dict)  # max shares per ticker
+    entry_types: dict[str, str] = field(default_factory=dict)  # "pullback" or "breakout" per watchlist ticker
 
 
 def load_portfolio(path: Path) -> Portfolio:
@@ -83,6 +84,7 @@ def load_portfolio(path: Path) -> Portfolio:
         cash_balance=float(raw.get("cash_balance", 0.0)),
         open_orders=tuple(open_orders),
         position_caps={k: float(v) for k, v in raw.get("position_caps", {}).items()},
+        entry_types={k: str(v) for k, v in raw.get("entry_types", {}).items()},
     )
 
 
@@ -104,6 +106,7 @@ def persist_watchlist_additions(
     portfolio_path: Path,
     tickers: list[str],
     targets: Optional[dict[str, float]] = None,
+    entry_types: Optional[dict[str, str]] = None,
 ) -> list[str]:
     """Atomically append new tickers to watch_list in portfolio.json.
 
@@ -125,6 +128,11 @@ def persist_watchlist_additions(
     if targets and added:
         raw.setdefault("targets", {}).update(
             {k: v for k, v in targets.items() if k in added}
+        )
+
+    if entry_types and added:
+        raw.setdefault("entry_types", {}).update(
+            {k: v for k, v in entry_types.items() if k in added}
         )
 
     if added:

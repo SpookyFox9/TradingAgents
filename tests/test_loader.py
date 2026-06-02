@@ -62,3 +62,67 @@ def test_iter_watchlist_missing_target_is_none(valid_portfolio_file):
     p = load_portfolio(valid_portfolio_file)
     pairs = dict(iter_watchlist(p))
     assert pairs["BAC"] is None
+
+
+def test_load_portfolio_parses_entry_types(tmp_path):
+    data = {
+        "holdings": [],
+        "watch_list": ["AVGO", "ANET"],
+        "targets": {"AVGO": 440.0, "ANET": 164.0},
+        "entry_types": {"AVGO": "breakout", "ANET": "pullback"},
+        "strategy": "test",
+    }
+    p = tmp_path / "portfolio.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+    portfolio = load_portfolio(p)
+    assert portfolio.entry_types["AVGO"] == "breakout"
+    assert portfolio.entry_types["ANET"] == "pullback"
+
+
+def test_load_portfolio_entry_types_defaults_to_empty(valid_portfolio_file):
+    portfolio = load_portfolio(valid_portfolio_file)
+    assert portfolio.entry_types == {}
+
+
+def test_persist_watchlist_additions_writes_entry_types(tmp_path):
+    from portfolio_lib.loader import persist_watchlist_additions
+    data = {
+        "holdings": [],
+        "watch_list": ["ANET"],
+        "targets": {"ANET": 164.0},
+        "entry_types": {"ANET": "pullback"},
+        "strategy": "test",
+    }
+    p = tmp_path / "portfolio.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+
+    added = persist_watchlist_additions(
+        p,
+        ["MRVL"],
+        targets={"MRVL": 80.0},
+        entry_types={"MRVL": "breakout"},
+    )
+
+    assert added == ["MRVL"]
+    result = load_portfolio(p)
+    assert result.entry_types["MRVL"] == "breakout"
+    assert result.entry_types["ANET"] == "pullback"  # existing preserved
+
+
+def test_persist_watchlist_additions_no_entry_types_leaves_existing(tmp_path):
+    from portfolio_lib.loader import persist_watchlist_additions
+    data = {
+        "holdings": [],
+        "watch_list": [],
+        "targets": {},
+        "entry_types": {},
+        "strategy": "test",
+    }
+    p = tmp_path / "portfolio.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+
+    persist_watchlist_additions(p, ["PLTR"], targets={"PLTR": 160.0})
+
+    result = load_portfolio(p)
+    # No entry_type set — R7 will default to pullback via fallback
+    assert "PLTR" not in result.entry_types

@@ -19,11 +19,14 @@ def _portfolio(
     *holdings: Holding,
     cash: float = 5_000.0,
     watch_list=(),
+    targets=None,
+    entry_types=None,
 ) -> Portfolio:
     return Portfolio(
         holdings=tuple(holdings),
         watch_list=tuple(watch_list),
-        targets={},
+        targets=targets or {},
+        entry_types=entry_types or {},
         strategy="test",
         cash_balance=cash,
     )
@@ -306,6 +309,97 @@ def test_is_blocked_ticker_expired_lockout_not_blocked():
     h = _holding("GME", wash_sale_lockout_until=PAST)
     p = _portfolio(h)
     assert is_blocked_ticker("GME", p) is False
+
+
+# ── R7: Entry price gate ─────────────────────────────────────────────────────
+
+def test_r7_pullback_blocked_when_price_above_target():
+    p = _portfolio(targets={"ANET": 164.0}, entry_types={"ANET": "pullback"})
+    result = check_order("ANET", "BUY", p, prices={"ANET": 170.68})
+    assert result == ComplianceResult(False, "R7", result.reason)
+    assert "pullback entry not met" in result.reason
+
+
+def test_r7_pullback_allowed_when_price_at_target():
+    p = _portfolio(targets={"ANET": 164.0}, entry_types={"ANET": "pullback"})
+    result = check_order("ANET", "BUY", p, prices={"ANET": 164.0})
+    assert result.allowed
+
+
+def test_r7_pullback_allowed_when_price_below_target():
+    p = _portfolio(targets={"ANET": 164.0}, entry_types={"ANET": "pullback"})
+    result = check_order("ANET", "BUY", p, prices={"ANET": 155.0})
+    assert result.allowed
+
+
+def test_r7_pullback_allowed_within_3pct_tolerance():
+    # 165.9 is ~1.2% above 164 — inside the 3% window
+    p = _portfolio(targets={"ANET": 164.0}, entry_types={"ANET": "pullback"})
+    result = check_order("ANET", "BUY", p, prices={"ANET": 165.9})
+    assert result.allowed
+
+
+def test_r7_breakout_allowed_when_price_within_window():
+    # $450 is ~2.3% above $440 trigger — inside the 3% window
+    p = _portfolio(targets={"AVGO": 440.0}, entry_types={"AVGO": "breakout"})
+    result = check_order("AVGO", "BUY", p, prices={"AVGO": 450.0})
+    assert result.allowed
+
+
+def test_r7_breakout_allowed_exactly_at_trigger():
+    p = _portfolio(targets={"AVGO": 440.0}, entry_types={"AVGO": "breakout"})
+    result = check_order("AVGO", "BUY", p, prices={"AVGO": 440.0})
+    assert result.allowed
+
+
+def test_r7_breakout_allowed_at_upper_edge_of_window():
+    # $453.20 = exactly 3% above $440 — still allowed
+    p = _portfolio(targets={"AVGO": 440.0}, entry_types={"AVGO": "breakout"})
+    result = check_order("AVGO", "BUY", p, prices={"AVGO": 440.0 * 1.03})
+    assert result.allowed
+
+
+def test_r7_breakout_stale_blocked_above_window():
+    # $484 is ~10% above $440 — stale, hard block
+    p = _portfolio(targets={"AVGO": 440.0}, entry_types={"AVGO": "breakout"})
+    result = check_order("AVGO", "BUY", p, prices={"AVGO": 484.0})
+    assert result == ComplianceResult(False, "R7", result.reason)
+    assert "stale" in result.reason
+
+
+def test_r7_breakout_blocked_when_price_below_trigger():
+    p = _portfolio(targets={"AVGO": 440.0}, entry_types={"AVGO": "breakout"})
+    result = check_order("AVGO", "BUY", p, prices={"AVGO": 430.0})
+    assert result == ComplianceResult(False, "R7", result.reason)
+    assert "breakout not confirmed" in result.reason
+
+
+def test_r7_skipped_when_no_prices_provided():
+    # No prices → R7 does not fire regardless of entry type
+    p = _portfolio(targets={"ANET": 164.0}, entry_types={"ANET": "pullback"})
+    result = check_order("ANET", "BUY", p)
+    assert result.rule != "R7"
+
+
+def test_r7_skipped_when_ticker_has_no_target():
+    # Ticker in portfolio but no target → R7 does not fire
+    p = _portfolio(targets={}, entry_types={})
+    result = check_order("NVDA", "BUY", p, prices={"NVDA": 250.0})
+    assert result.rule != "R7"
+
+
+def test_r7_defaults_to_pullback_when_entry_type_unset():
+    # entry_types dict exists but no entry for this ticker → defaults to pullback behaviour
+    p = _portfolio(targets={"PLTR": 160.0}, entry_types={})
+    result = check_order("PLTR", "BUY", p, prices={"PLTR": 170.0})
+    assert result == ComplianceResult(False, "R7", result.reason)
+
+
+def test_r7_does_not_apply_to_sell():
+    h = _holding("ANET", entry=164.0, shares=2.0)
+    p = _portfolio(h, targets={"ANET": 164.0}, entry_types={"ANET": "pullback"})
+    result = check_order("ANET", "SELL", p, prices={"ANET": 200.0})
+    assert result.rule != "R7"
 
 
 # ── Rule priority (R3 before R2 before R1) ────────────────────────────────────
