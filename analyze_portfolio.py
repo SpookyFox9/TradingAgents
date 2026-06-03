@@ -427,8 +427,11 @@ def main() -> None:
     macro_snapshot = fetch_macro_snapshot()
     logger.info("Macro regime: %s", macro_snapshot.regime)
 
-    # Pre-fetch prices for portfolio context (uses cache — no extra yfinance calls during analysis)
-    all_tickers = [h.ticker for h in portfolio.holdings if h.entry and h.entry > 0]
+    # Pre-fetch prices for holdings and watchlist — both needed for R7 entry-price compliance
+    all_tickers = (
+        [h.ticker for h in portfolio.holdings if h.entry and h.entry > 0]
+        + list(portfolio.watch_list)
+    )
     prices: dict = {t: get_price(t) for t in all_tickers}
 
     # Phase 4: grade any open signals that have aged past their lookback window

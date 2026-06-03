@@ -422,6 +422,80 @@ def test_stage_falls_back_to_pct_when_no_llm_shares(tmp_path):
     assert submitted_orders[0]["suggested_shares"] == pytest.approx(expected)
 
 
+# ── R7 requires prices dict to contain the watchlist ticker (regression) ─────
+
+def test_r7_pullback_blocked_when_prices_dict_contains_watchlist_ticker(tmp_path):
+    """R7 must fire for watchlist tickers when their price is in the prices dict.
+
+    Regression: analyze_portfolio.py previously only pre-fetched prices for
+    holdings, so prices.get('ANET') was None for watchlist tickers and R7
+    silently skipped, allowing orders to pass through at wrong prices.
+    """
+    p = Portfolio(
+        holdings=(),
+        watch_list=("ANET",),
+        targets={"ANET": 164.0},
+        entry_types={"ANET": "pullback"},
+        strategy="test",
+        cash_balance=5_000.0,
+    )
+
+    with patch("portfolio_lib.executor._open_same_side_order_exists", return_value=False), \
+         patch("portfolio_lib.executor.submit_order") as mock_submit:
+        blocked = stage_pending_order(
+            ticker="ANET",
+            decision="BUY",
+            kind="WATCHLIST",
+            cash_balance=p.cash_balance,
+            current_price=175.33,
+            target_price=164.0,
+            report_path=None,
+            results_dir=tmp_path / "Analysis",
+            portfolio=p,
+            prices={"ANET": 175.33},  # watchlist ticker present in prices dict
+        )
+
+    assert blocked == "R7", f"Expected R7, got {blocked!r}"
+    mock_submit.assert_not_called()
+
+
+def test_r7_skipped_when_watchlist_ticker_missing_from_prices_dict(tmp_path):
+    """Without the ticker in prices dict, R7 cannot evaluate — order proceeds."""
+    p = Portfolio(
+        holdings=(),
+        watch_list=("ANET",),
+        targets={"ANET": 164.0},
+        entry_types={"ANET": "pullback"},
+        strategy="test",
+        cash_balance=5_000.0,
+    )
+
+    submitted_orders = []
+
+    def fake_submit(order, shares_override, results_dir, *, portfolio=None, prices=None):
+        submitted_orders.append(order)
+        return {**order, "alpaca_order_id": "fake-id", "status": "submitted"}
+
+    with patch("portfolio_lib.executor._open_same_side_order_exists", return_value=False), \
+         patch("portfolio_lib.executor.submit_order", side_effect=fake_submit):
+        blocked = stage_pending_order(
+            ticker="ANET",
+            decision="BUY",
+            kind="WATCHLIST",
+            cash_balance=p.cash_balance,
+            current_price=175.33,
+            target_price=164.0,
+            report_path=None,
+            results_dir=tmp_path / "Analysis",
+            portfolio=p,
+            prices={},  # ANET not in prices — R7 skips, order passes through
+        )
+
+    # R7 skips (no price data), order proceeds — documents the fallback behaviour
+    assert blocked is None
+    assert len(submitted_orders) == 1
+
+
 # ── Alpaca compliance portfolio (Issue 2) ────────────────────────────────────
 
 def _write_alpaca_portfolio(path: Path, holdings, cash: float, position_caps=None) -> None:
