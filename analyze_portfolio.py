@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import dataclasses
 import logging
 import os
 import sys
@@ -172,6 +173,7 @@ def _run_holdings_loop(ta, portfolio, run_holdings, prices, macro_snapshot, run_
             )
             if blocked_rule:
                 tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)
+                result = dataclasses.replace(result, blocked_rule=blocked_rule)
             results.append(result)
         except Exception as exc:
             logger.error("Failed to analyze %s: %s", holding.ticker, exc, exc_info=True)
@@ -223,6 +225,7 @@ def _run_watchlist_loop(ta, portfolio, run_watchlist, prices, macro_snapshot, ru
             )
             if blocked_rule:
                 tag_compliance_block(run_cfg.results_dir, result.ticker, run_cfg.analysis_date, blocked_rule)
+                result = dataclasses.replace(result, blocked_rule=blocked_rule)
             results.append(result)
         except Exception as exc:
             logger.error("Failed to analyze %s: %s", ticker, exc, exc_info=True)

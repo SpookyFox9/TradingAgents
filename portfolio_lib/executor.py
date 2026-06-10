@@ -184,7 +184,7 @@ def stage_pending_order(
                 "Compliance block [%s] — %s %s skipped: %s",
                 result.rule, action, ticker, result.reason,
             )
-            return result.rule
+            return f"{result.rule}: {result.reason}"
     else:
         logger.warning(
             "stage_pending_order called without portfolio — compliance checks skipped for %s",

@@ -31,6 +31,7 @@ class TickerResult:
     invest_judge_decision: str
     risk_judge_decision: str
     final_trade_decision: str
+    blocked_rule: Optional[str] = None  # set post-compliance; e.g. "R7: breakout not confirmed..."
 
 
 def _safe_str(state: dict[str, Any], key: str) -> str:

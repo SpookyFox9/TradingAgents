@@ -19,6 +19,7 @@ _DECISION_EMOJI = {
 }
 
 _ACTIONABLE = {"BUY", "SELL", "OVERWEIGHT", "UNDERWEIGHT"}
+_BLOCKED_EMOJI = ":no_entry:"
 
 
 def _fmt(p: Optional[float]) -> str:
@@ -109,7 +110,8 @@ def build_slack_text(
     watchlist = [r for r in results if r.kind == TickerKind.WATCHLIST]
     candidates = [r for r in results if r.kind == TickerKind.CANDIDATE]
     prices = {r.ticker: get_price(r.ticker) for r in results}
-    action_results = [r for r in results if r.decision.upper() in _ACTIONABLE]
+    action_results = [r for r in results if r.decision.upper() in _ACTIONABLE and not r.blocked_rule]
+    blocked_results = [r for r in results if r.decision.upper() in _ACTIONABLE and r.blocked_rule]
 
     lines: list[str] = []
 
@@ -124,13 +126,24 @@ def build_slack_text(
             lines.append(top_line)
         lines.append("")
 
+    # ── Compliance-blocked signals ───────────────────────────────────────────
+    if blocked_results:
+        for r in blocked_results:
+            lines.append(f"{_BLOCKED_EMOJI} *{r.ticker}: {r.decision} — BLOCKED* | {r.blocked_rule}")
+        lines.append("")
+
     # ── Header ───────────────────────────────────────────────────────────────
     lines += [f":bar_chart: *StockBoy {ts}* | `{regime or 'unknown'}` | {cost_str}", ""]
 
     # ── Holdings ─────────────────────────────────────────────────────────────
     if holdings:
         for r in holdings:
-            emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
+            if r.blocked_rule:
+                emoji = _BLOCKED_EMOJI
+                decision_label = f"{r.decision} *(blocked)*"
+            else:
+                emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
+                decision_label = r.decision
             current = prices[r.ticker]
             pnl = _pnl_str(r.entry, current)
             stop = _extract_stop(r.risk_judge_decision)
@@ -139,9 +152,9 @@ def build_slack_text(
                 f"Stop {stop}" if stop else None,
                 f"Trim {trim}" if trim else None,
             ]))
-            act = _action_text(_trader_verdict(r.trader_investment_plan))
+            act = None if r.blocked_rule else _action_text(_trader_verdict(r.trader_investment_plan))
 
-            lines.append(f"{emoji} *{r.ticker}* — {r.decision}")
+            lines.append(f"{emoji} *{r.ticker}* — {decision_label}")
             lines.append(f"  {pnl} | {r.shares:.0f}sh @ {_fmt(r.entry)}")
             if levels:
                 lines.append(f"  {levels}")
@@ -152,15 +165,20 @@ def build_slack_text(
     # ── Watchlist ────────────────────────────────────────────────────────────
     if watchlist:
         for r in watchlist:
-            emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
+            if r.blocked_rule:
+                emoji = _BLOCKED_EMOJI
+                decision_label = f"{r.decision} *(blocked)*"
+            else:
+                emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
+                decision_label = r.decision
             current = prices[r.ticker]
             dist = ""
             if current is not None and r.target is not None:
                 pct = (r.target - current) / current * 100
                 dist = f" | Target {_fmt(r.target)} ({pct:+.1f}%)"
-            act = _action_text(_trader_verdict(r.trader_investment_plan))
+            act = None if r.blocked_rule else _action_text(_trader_verdict(r.trader_investment_plan))
 
-            lines.append(f"{emoji} *{r.ticker}* — {r.decision} (Watchlist)")
+            lines.append(f"{emoji} *{r.ticker}* — {decision_label} (Watchlist)")
             lines.append(f"  {_fmt(current)}{dist}")
             if act:
                 lines.append(f"  _{act}_")
