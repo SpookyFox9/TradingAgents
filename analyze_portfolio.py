@@ -22,14 +22,19 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+_env_path = Path(".env")
+if _env_path.exists():
+    logger.warning(
+        ".env file found and loaded -- prefer OS-level env vars; ensure this file is not committed to git"
+    )
+    load_dotenv(_env_path)
 
 
 def _check_env() -> None:

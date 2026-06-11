@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
@@ -8,6 +9,8 @@ from typing import Iterator, Optional
 logger = logging.getLogger(__name__)
 
 _REQUIRED_HOLDING_KEYS = {"ticker", "entry", "shares"}
+_TICKER_RE = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
+_VALID_ENTRY_TYPES = {"pullback", "breakout"}
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,8 @@ def load_portfolio(path: Path) -> Portfolio:
         missing = _REQUIRED_HOLDING_KEYS - h.keys()
         if missing:
             raise ValueError(f"Holding[{i}] missing keys: {missing}")
+        if not _TICKER_RE.match(h["ticker"]):
+            raise ValueError(f"Holding[{i}] has invalid ticker: {h['ticker']!r}")
         lockout = h.get("wash_sale_lockout_days")
         holdings.append(Holding(
             ticker=h["ticker"],
@@ -126,11 +131,17 @@ def persist_watchlist_additions(
             added.append(ticker)
 
     if targets and added:
+        for k, v in targets.items():
+            if not isinstance(v, (int, float)) or v <= 0:
+                raise ValueError(f"Invalid target price for {k}: {v!r}")
         raw.setdefault("targets", {}).update(
             {k: v for k, v in targets.items() if k in added}
         )
 
     if entry_types and added:
+        for k, v in entry_types.items():
+            if v not in _VALID_ENTRY_TYPES:
+                raise ValueError(f"Invalid entry_type for {k}: {v!r} (must be one of {_VALID_ENTRY_TYPES})")
         raw.setdefault("entry_types", {}).update(
             {k: v for k, v in entry_types.items() if k in added}
         )

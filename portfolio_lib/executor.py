@@ -207,7 +207,7 @@ def stage_pending_order(
             .isoformat()
         ),
         "status": "pending",
-        "report_path": str(report_path) if report_path else None,
+        "report_path": report_path.name if report_path else None,
     }
 
     if _auto_execute_enabled() and _has_alpaca_keys():
