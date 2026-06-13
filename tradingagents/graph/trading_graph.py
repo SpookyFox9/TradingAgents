@@ -201,12 +201,16 @@ class TradingAgentsGraph:
         (None, None, None) if price data is unavailable (too recent, delisted,
         or network error).
         """
+        from tradingagents.dataflows.symbol_utils import normalize_symbol
+
         try:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
             end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
             end_str = end.strftime("%Y-%m-%d")
 
-            stock = yf.Ticker(ticker).history(start=trade_date, end=end_str)
+            # Normalize so the realized-return lookup hits the same instrument
+            # the analysis priced (#984).
+            stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
             spy = yf.Ticker("SPY").history(start=trade_date, end=end_str)
 
             if len(stock) < 2 or len(spy) < 2:
