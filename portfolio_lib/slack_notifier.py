@@ -95,6 +95,50 @@ def _action_text(verdict: Optional[str]) -> Optional[str]:
     return verdict.split(' — ', 1)[-1] if ' — ' in verdict else verdict
 
 
+def _trader_stop(text: str) -> Optional[str]:
+    """Extract Stop Loss value from trader plan structured field."""
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Stop Loss\*{0,2}\s*[:\|]\s*([\d,\.]+)', text, re.IGNORECASE)
+    if m:
+        return f"${m.group(1)}"
+    return _extract_stop(text)
+
+
+def _trader_sizing(text: str, max_chars: int = 120) -> Optional[str]:
+    """Extract first sentence of Position Sizing field from trader plan."""
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Position Sizing\*{0,2}\s*[:\|]\s*([^\n]+)', text, re.IGNORECASE)
+    if not m:
+        return None
+    raw = m.group(1).strip().rstrip('*').strip()
+    end = raw.find('. ')
+    sentence = raw[:end + 1] if end > 0 else raw
+    return (sentence[:max_chars].rstrip() + '...') if len(sentence) > max_chars else sentence
+
+
+def _trader_reasoning(text: str, max_chars: int = 160) -> Optional[str]:
+    """Extract first sentence of Reasoning field from trader plan."""
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Reasoning\*{0,2}\s*[:\|]\s*([^\n]+)', text, re.IGNORECASE)
+    if not m:
+        return None
+    raw = m.group(1).strip().rstrip('*').strip()
+    end = raw.find('. ')
+    sentence = raw[:end + 1] if end > 0 else raw
+    return (sentence[:max_chars].rstrip() + '...') if len(sentence) > max_chars else sentence
+
+
+def _price_target(text: str) -> Optional[str]:
+    """Extract Price Target from risk judge decision."""
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Price Target\*{0,2}\s*[:\|]\s*([\d,\.]+)', text, re.IGNORECASE)
+    return f"${m.group(1)}" if m else None
+
+
 def build_slack_text(
     results: list[TickerResult],
     regime: Optional[str],
@@ -119,11 +163,15 @@ def build_slack_text(
     if action_results:
         for r in action_results:
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
-            act = _action_text(_trader_verdict(r.trader_investment_plan))
-            top_line = f":zap: {emoji} *{r.ticker}: {r.decision}*"
-            if act:
-                top_line += f" — {act}"
-            lines.append(top_line)
+            current = prices[r.ticker]
+            pnl = _pnl_str(r.entry, current) if r.entry else _fmt(current)
+            sizing = _trader_sizing(r.trader_investment_plan)
+            reasoning = _trader_reasoning(r.trader_investment_plan)
+            lines.append(f":zap: {emoji} *{r.ticker}: {r.decision}* | {r.shares:.0f}sh @ {_fmt(r.entry)} → {pnl}")
+            if sizing:
+                lines.append(f"  :pencil: {sizing}")
+            if reasoning:
+                lines.append(f"  _{reasoning}_")
         lines.append("")
 
     # ── Compliance-blocked signals ───────────────────────────────────────────
@@ -146,20 +194,25 @@ def build_slack_text(
                 decision_label = r.decision
             current = prices[r.ticker]
             pnl = _pnl_str(r.entry, current)
-            stop = _extract_stop(r.risk_judge_decision)
+            stop = _trader_stop(r.trader_investment_plan) or _extract_stop(r.risk_judge_decision)
             trim = _extract_trim(r.risk_judge_decision)
+            target = _price_target(r.risk_judge_decision)
             levels = " | ".join(filter(None, [
                 f"Stop {stop}" if stop else None,
                 f"Trim {trim}" if trim else None,
+                f"Target {target}" if target else None,
             ]))
-            act = None if r.blocked_rule else _action_text(_trader_verdict(r.trader_investment_plan))
+            reasoning = None if r.blocked_rule else _trader_reasoning(r.trader_investment_plan)
+            sizing = None if r.blocked_rule else _trader_sizing(r.trader_investment_plan)
 
             lines.append(f"{emoji} *{r.ticker}* — {decision_label}")
             lines.append(f"  {pnl} | {r.shares:.0f}sh @ {_fmt(r.entry)}")
             if levels:
                 lines.append(f"  {levels}")
-            if act:
-                lines.append(f"  _{act}_")
+            if sizing and r.decision.upper() in _ACTIONABLE:
+                lines.append(f"  :pencil: {sizing}")
+            if reasoning:
+                lines.append(f"  _{reasoning}_")
         lines.append("")
 
     # ── Watchlist ────────────────────────────────────────────────────────────
