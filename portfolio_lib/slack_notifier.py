@@ -139,6 +139,14 @@ def _price_target(text: str) -> Optional[str]:
     return f"${m.group(1)}" if m else None
 
 
+def _trader_entry_price(text: str) -> Optional[str]:
+    """Extract Entry Price from trader plan structured field."""
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Entry Price\*{0,2}\s*[:\|]\s*([\d,\.]+)', text, re.IGNORECASE)
+    return f"${m.group(1)}" if m else None
+
+
 def build_slack_text(
     results: list[TickerResult],
     regime: Optional[str],
@@ -164,10 +172,18 @@ def build_slack_text(
         for r in action_results:
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
             current = prices[r.ticker]
-            pnl = _pnl_str(r.entry, current) if r.entry else _fmt(current)
+            if r.kind == TickerKind.WATCHLIST:
+                dist = ""
+                if current is not None and r.target is not None:
+                    pct = (r.target - current) / current * 100
+                    dist = f" → target {_fmt(r.target)} ({pct:+.1f}%)"
+                header = f":zap: {emoji} *{r.ticker}: {r.decision}* (Watchlist) | {_fmt(current)}{dist}"
+            else:
+                pnl = _pnl_str(r.entry, current) if r.entry else _fmt(current)
+                header = f":zap: {emoji} *{r.ticker}: {r.decision}* | {r.shares:.0f}sh @ {_fmt(r.entry)} → {pnl}"
             sizing = _trader_sizing(r.trader_investment_plan)
             reasoning = _trader_reasoning(r.trader_investment_plan)
-            lines.append(f":zap: {emoji} *{r.ticker}: {r.decision}* | {r.shares:.0f}sh @ {_fmt(r.entry)} → {pnl}")
+            lines.append(header)
             if sizing:
                 lines.append(f"  :pencil: {sizing}")
             if reasoning:
@@ -229,12 +245,26 @@ def build_slack_text(
             if current is not None and r.target is not None:
                 pct = (r.target - current) / current * 100
                 dist = f" | Target {_fmt(r.target)} ({pct:+.1f}%)"
-            act = None if r.blocked_rule else _action_text(_trader_verdict(r.trader_investment_plan))
+
+            is_actionable = r.decision.upper() in _ACTIONABLE and not r.blocked_rule
+            entry_price = _trader_entry_price(r.trader_investment_plan) if is_actionable else None
+            stop = _trader_stop(r.trader_investment_plan) if is_actionable else None
+            sizing = _trader_sizing(r.trader_investment_plan) if is_actionable else None
+            reasoning = None if r.blocked_rule else _trader_reasoning(r.trader_investment_plan)
 
             lines.append(f"{emoji} *{r.ticker}* — {decision_label} (Watchlist)")
             lines.append(f"  {_fmt(current)}{dist}")
-            if act:
-                lines.append(f"  _{act}_")
+            if is_actionable:
+                levels = " | ".join(filter(None, [
+                    f"Entry ~{entry_price}" if entry_price else None,
+                    f"Stop {stop}" if stop else None,
+                ]))
+                if levels:
+                    lines.append(f"  {levels}")
+                if sizing:
+                    lines.append(f"  :pencil: {sizing}")
+            if reasoning:
+                lines.append(f"  _{reasoning}_")
         lines.append("")
 
     # ── Discovery candidates ─────────────────────────────────────────────────
