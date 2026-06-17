@@ -147,6 +147,14 @@ def _trader_entry_price(text: str) -> Optional[str]:
     return f"${m.group(1)}" if m else None
 
 
+def _trader_share_count(text: str) -> Optional[str]:
+    """Extract integer share count from Position Sizing field, e.g. '3' from '3 shares ...'."""
+    if not text:
+        return None
+    m = re.search(r'\*{0,2}Position Sizing\*{0,2}\s*[:\|]\s*(\d+)\s+share', text, re.IGNORECASE)
+    return m.group(1) if m else None
+
+
 def build_slack_text(
     results: list[TickerResult],
     regime: Optional[str],
@@ -173,21 +181,24 @@ def build_slack_text(
             emoji = _DECISION_EMOJI.get(r.decision.upper(), ":white_circle:")
             current = prices[r.ticker]
             if r.kind == TickerKind.WATCHLIST:
-                dist = ""
-                if current is not None and r.target is not None:
-                    pct = (r.target - current) / current * 100
-                    dist = f" → target {_fmt(r.target)} ({pct:+.1f}%)"
-                header = f":zap: {emoji} *{r.ticker}: {r.decision}* (Watchlist) | {_fmt(current)}{dist}"
+                shares = _trader_share_count(r.trader_investment_plan) or "?"
+                stop = _trader_stop(r.trader_investment_plan)
+                tx = f"*ACTION: BUY {shares}sh {r.ticker} @ ~{_fmt(current)}*"
+                tx += f" | Stop {stop}" if stop else ""
+                tx += f" | Target {_fmt(r.target)}" if r.target else ""
+                lines.append(f":zap: {emoji} {tx}")
+                reasoning = _trader_reasoning(r.trader_investment_plan)
+                if reasoning:
+                    lines.append(f"  _{reasoning}_")
             else:
                 pnl = _pnl_str(r.entry, current) if r.entry else _fmt(current)
-                header = f":zap: {emoji} *{r.ticker}: {r.decision}* | {r.shares:.0f}sh @ {_fmt(r.entry)} → {pnl}"
-            sizing = _trader_sizing(r.trader_investment_plan)
-            reasoning = _trader_reasoning(r.trader_investment_plan)
-            lines.append(header)
-            if sizing:
-                lines.append(f"  :pencil: {sizing}")
-            if reasoning:
-                lines.append(f"  _{reasoning}_")
+                lines.append(f":zap: {emoji} *{r.ticker}: {r.decision}* | {r.shares:.0f}sh @ {_fmt(r.entry)} → {pnl}")
+                sizing = _trader_sizing(r.trader_investment_plan)
+                reasoning = _trader_reasoning(r.trader_investment_plan)
+                if sizing:
+                    lines.append(f"  :pencil: {sizing}")
+                if reasoning:
+                    lines.append(f"  _{reasoning}_")
         lines.append("")
 
     # ── Compliance-blocked signals ───────────────────────────────────────────
@@ -247,22 +258,21 @@ def build_slack_text(
                 dist = f" | Target {_fmt(r.target)} ({pct:+.1f}%)"
 
             is_actionable = r.decision.upper() in _ACTIONABLE and not r.blocked_rule
-            entry_price = _trader_entry_price(r.trader_investment_plan) if is_actionable else None
             stop = _trader_stop(r.trader_investment_plan) if is_actionable else None
-            sizing = _trader_sizing(r.trader_investment_plan) if is_actionable else None
+            shares = _trader_share_count(r.trader_investment_plan) if is_actionable else None
             reasoning = None if r.blocked_rule else _trader_reasoning(r.trader_investment_plan)
 
             lines.append(f"{emoji} *{r.ticker}* — {decision_label} (Watchlist)")
-            lines.append(f"  {_fmt(current)}{dist}")
             if is_actionable:
-                levels = " | ".join(filter(None, [
-                    f"Entry ~{entry_price}" if entry_price else None,
-                    f"Stop {stop}" if stop else None,
-                ]))
-                if levels:
-                    lines.append(f"  {levels}")
-                if sizing:
-                    lines.append(f"  :pencil: {sizing}")
+                tx_parts = [f"BUY {shares}sh @ ~{_fmt(current)}" if shares else f"BUY @ ~{_fmt(current)}"]
+                if stop:
+                    tx_parts.append(f"Stop {stop}")
+                if r.target and current:
+                    pct = (r.target - current) / current * 100
+                    tx_parts.append(f"Target {_fmt(r.target)} ({pct:+.1f}%)")
+                lines.append(f"  {' | '.join(tx_parts)}")
+            else:
+                lines.append(f"  {_fmt(current)}{dist}")
             if reasoning:
                 lines.append(f"  _{reasoning}_")
         lines.append("")
