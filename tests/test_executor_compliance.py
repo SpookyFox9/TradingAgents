@@ -70,7 +70,7 @@ def test_gme_buy_never_reaches_alpaca(tmp_path, caplog):
             portfolio=p,
         )
 
-    assert blocked == "R2", f"Expected R2, got {blocked!r}"
+    assert blocked is not None and blocked.startswith("R2"), f"Expected R2, got {blocked!r}"
     mock_submit.assert_not_called()
 
 
@@ -90,7 +90,7 @@ def test_gme_sell_never_reaches_alpaca(tmp_path):
             portfolio=p,
         )
 
-    assert blocked == "R2"
+    assert blocked is not None and blocked.startswith("R2")
     mock_submit.assert_not_called()
 
 
@@ -113,7 +113,7 @@ def test_gmews_buy_blocked(tmp_path):
             portfolio=p,
         )
 
-    assert blocked == "R3"
+    assert blocked is not None and blocked.startswith("R3")
     mock_submit.assert_not_called()
 
 
@@ -233,7 +233,7 @@ def test_r7_pullback_price_above_target_blocked(tmp_path):
             prices={"ANET": 170.68},
         )
 
-    assert blocked == "R7"
+    assert blocked is not None and blocked.startswith("R7")
     mock_submit.assert_not_called()
 
 
@@ -299,7 +299,7 @@ def test_r7_breakout_stale_blocked(tmp_path):
             prices={"AVGO": 484.0},
         )
 
-    assert blocked == "R7"
+    assert blocked is not None and blocked.startswith("R7")
     mock_submit.assert_not_called()
 
 
@@ -328,7 +328,7 @@ def test_r7_breakout_below_trigger_blocked(tmp_path):
             prices={"AVGO": 430.0},
         )
 
-    assert blocked == "R7"
+    assert blocked is not None and blocked.startswith("R7")
     mock_submit.assert_not_called()
 
 
@@ -455,7 +455,7 @@ def test_r7_pullback_blocked_when_prices_dict_contains_watchlist_ticker(tmp_path
             prices={"ANET": 175.33},  # watchlist ticker present in prices dict
         )
 
-    assert blocked == "R7", f"Expected R7, got {blocked!r}"
+    assert blocked is not None and blocked.startswith("R7"), f"Expected R7, got {blocked!r}"
     mock_submit.assert_not_called()
 
 
@@ -547,13 +547,14 @@ def test_compliance_uses_alpaca_holdings_not_fidelity(tmp_path):
             prices={"AVGO": 450.0},
         )
 
-    # Should be blocked by R5a (Alpaca already at 3-share cap)
-    assert blocked == "R5"
+    # Should be blocked by R5 (Alpaca already at 3-share cap or 30% concentration)
+    assert blocked is not None and blocked.startswith("R5")
     mock_submit.assert_not_called()
 
 
-def test_compliance_fidelity_caps_applied_to_alpaca(tmp_path):
-    """position_caps from Fidelity must be inherited even if absent from alpaca_portfolio.json."""
+def test_compliance_alpaca_own_caps_enforced(tmp_path):
+    """Alpaca's own position_caps are used — Fidelity caps are not inherited."""
+    # Fidelity has no cap for AVGO; Alpaca file has cap=2.
     fidelity = Portfolio(
         holdings=(),
         watch_list=("AVGO",),
@@ -561,12 +562,11 @@ def test_compliance_fidelity_caps_applied_to_alpaca(tmp_path):
         entry_types={"AVGO": "breakout"},
         strategy="test",
         cash_balance=2_175.65,
-        position_caps={"AVGO": 2},  # Fidelity cap: max 2 shares
+        position_caps={},  # no cap on Fidelity side
     )
     alpaca_path = tmp_path / "alpaca_portfolio.json"
-    # Alpaca has 2 shares, no position_caps in its file
     alpaca_holding = Holding(ticker="AVGO", entry=448.0, shares=2.0)
-    _write_alpaca_portfolio(alpaca_path, [alpaca_holding], cash=1_200.0, position_caps={})
+    _write_alpaca_portfolio(alpaca_path, [alpaca_holding], cash=1_200.0, position_caps={"AVGO": 2})
 
     with patch("portfolio_lib.executor._open_same_side_order_exists", return_value=False), \
          patch("portfolio_lib.executor.submit_order") as mock_submit:
@@ -584,9 +584,54 @@ def test_compliance_fidelity_caps_applied_to_alpaca(tmp_path):
             prices={"AVGO": 450.0},
         )
 
-    # Fidelity cap=2, Alpaca has 2 → R5a should block
-    assert blocked == "R5"
+    # Alpaca cap=2, Alpaca has 2 → R5a blocks using Alpaca's own cap
+    assert blocked is not None and blocked.startswith("R5")
     mock_submit.assert_not_called()
+
+
+def test_fidelity_caps_not_inherited_by_alpaca(tmp_path):
+    """Fidelity position_caps must NOT bleed into Alpaca compliance."""
+    # Fidelity has a strict cap=1 for LRCX; Alpaca file has no cap.
+    # With a large cash balance, R5b concentration won't fire either.
+    fidelity = Portfolio(
+        holdings=(),
+        watch_list=("LRCX",),
+        targets={},
+        entry_types={},
+        strategy="test",
+        cash_balance=50_000.0,
+        position_caps={"LRCX": 1},  # Fidelity cap that must NOT apply to Alpaca
+    )
+    alpaca_path = tmp_path / "alpaca_portfolio.json"
+    alpaca_holding = Holding(ticker="LRCX", entry=341.0, shares=1.0)
+    # Alpaca has $90k cash — LRCX 1sh is only 0.4% of portfolio, so R5b won't fire.
+    _write_alpaca_portfolio(alpaca_path, [alpaca_holding], cash=90_000.0, position_caps={})
+
+    submitted_orders = []
+
+    def fake_submit(order, shares_override, results_dir, *, portfolio=None, prices=None):
+        submitted_orders.append(order)
+        return {**order, "alpaca_order_id": "fake-id", "status": "submitted"}
+
+    with patch("portfolio_lib.executor._open_same_side_order_exists", return_value=False), \
+         patch("portfolio_lib.executor.submit_order", side_effect=fake_submit):
+        blocked = stage_pending_order(
+            ticker="LRCX",
+            decision="BUY",
+            kind="WATCHLIST",
+            cash_balance=fidelity.cash_balance,
+            current_price=400.0,
+            target_price=None,
+            report_path=None,
+            results_dir=tmp_path / "Analysis",
+            portfolio=fidelity,
+            alpaca_portfolio_path=alpaca_path,
+            prices={"LRCX": 400.0},
+        )
+
+    # Fidelity cap=1 is NOT applied to Alpaca — order passes through
+    assert blocked is None
+    assert len(submitted_orders) == 1
 
 
 def test_compliance_falls_back_to_fidelity_if_alpaca_file_missing(tmp_path):

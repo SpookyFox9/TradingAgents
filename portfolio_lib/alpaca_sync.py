@@ -41,16 +41,15 @@ def _alpaca_paper_client():
     return TradingClient(api_key, api_secret, paper=True)
 
 
-def reconcile_with_alpaca(alpaca_portfolio_path: Path, fidelity_path: Path) -> None:
+def reconcile_with_alpaca(alpaca_portfolio_path: Path) -> None:
     """Sync alpaca_portfolio.json with the live Alpaca paper account.
 
     Fetches current positions and cash from the Alpaca API, then rewrites
-    alpaca_portfolio.json with live values. Fidelity doctrine fields
-    (position_caps, entry_types, targets, watch_list, tax-loss roles,
-    wash-sale lockouts) are always sourced from portfolio.json.
-
-    Compliance-only Fidelity holdings (warrants, tax-loss holds) that are
-    never purchased on Alpaca are preserved so that R2/R3 still fire correctly.
+    alpaca_portfolio.json. Holdings and cash_balance are updated from live
+    Alpaca data. All doctrine fields (watch_list, targets, position_caps,
+    entry_types, and holding-level role/wash-sale fields) are preserved from
+    the existing alpaca_portfolio.json — they are never sourced from
+    portfolio.json (Fidelity). The Alpaca account is fully independent.
 
     Raises RuntimeError if ALPACA_API_KEY / ALPACA_API_SECRET are not set.
     All other exceptions propagate; the caller should wrap in try/except and
@@ -63,39 +62,40 @@ def reconcile_with_alpaca(alpaca_portfolio_path: Path, fidelity_path: Path) -> N
 
     alpaca_positions = client.get_all_positions()
 
-    fidelity_data = json.loads(fidelity_path.read_text(encoding="utf-8"))
-    fidelity_holdings_map = {h["ticker"]: h for h in fidelity_data.get("holdings", [])}
+    # Read existing alpaca_portfolio.json for doctrine (watch_list, targets,
+    # position_caps, entry_types, and holding-level role/wash-sale data).
+    existing: dict = {}
+    if alpaca_portfolio_path.exists():
+        try:
+            existing = json.loads(alpaca_portfolio_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Could not read existing alpaca_portfolio.json — doctrine reset")
 
-    # Build reconciled holdings from live Alpaca positions
-    live_tickers: set[str] = set()
+    existing_holdings_map = {h["ticker"]: h for h in existing.get("holdings", [])}
+
+    # Build holdings from live Alpaca positions only.
+    # Holding-level doctrine (role, wash-sale lockout, etc.) is carried forward
+    # from the existing Alpaca file, not injected from Fidelity.
     holdings: list[dict] = []
     for pos in alpaca_positions:
         ticker = str(pos.symbol).upper()
-        live_tickers.add(ticker)
         holding: dict = {
             "ticker": ticker,
             "entry": round(float(pos.avg_entry_price), 4),
             "shares": round(float(pos.qty), 4),
         }
-        # Copy doctrine fields from Fidelity where present (roles, lockouts, lot info, etc.)
-        fid = fidelity_holdings_map.get(ticker, {})
+        existing_h = existing_holdings_map.get(ticker, {})
         for field in (
             "acquired_date", "broker", "lots",
             "role", "harvest_target_date", "lot_method",
             "wash_sale_lockout_days", "wash_sale_lockout_until",
         ):
-            if field in fid:
-                holding[field] = fid[field]
+            if field in existing_h:
+                holding[field] = existing_h[field]
         holdings.append(holding)
 
-    # Preserve Fidelity-only holdings (warrants, tax-loss holds) that are never purchased
-    # on Alpaca. These must remain visible so R2/R3 compliance rules still fire.
-    for ticker, fid_h in fidelity_holdings_map.items():
-        if ticker not in live_tickers:
-            holdings.append(fid_h)
-
     reconciled: dict = {
-        **fidelity_data,            # carries position_caps, entry_types, targets, watch_list
+        **existing,             # preserves watch_list, targets, position_caps, entry_types, etc.
         "holdings": holdings,
         "cash_balance": live_cash,
         "open_orders": [],
@@ -108,7 +108,7 @@ def reconcile_with_alpaca(alpaca_portfolio_path: Path, fidelity_path: Path) -> N
     atomic_write_text(alpaca_portfolio_path, json.dumps(reconciled, indent=2))
     logger.info(
         "alpaca_portfolio.json reconciled — %d live position(s), cash $%.2f",
-        len(live_tickers), live_cash,
+        len(holdings), live_cash,
     )
 
 

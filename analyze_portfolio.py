@@ -412,7 +412,7 @@ def main() -> None:
     # Silently skipped when Alpaca keys are absent (local/CI environments).
     try:
         from portfolio_lib.alpaca_sync import reconcile_with_alpaca
-        reconcile_with_alpaca(run_cfg.alpaca_portfolio_path, run_cfg.portfolio_path)
+        reconcile_with_alpaca(run_cfg.alpaca_portfolio_path)
     except Exception as exc:
         logger.warning(
             "Alpaca portfolio reconciliation skipped: %s — using cached alpaca_portfolio.json",

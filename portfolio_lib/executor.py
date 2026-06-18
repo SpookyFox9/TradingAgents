@@ -265,29 +265,17 @@ _MAX_AUTO_SHARES = 10  # hard cap per auto-execute order (interactive approve_tr
 def _build_alpaca_compliance_portfolio(alpaca_portfolio_path: Path, fidelity_portfolio):
     """Return a Portfolio for compliance checks when auto-executing on Alpaca paper.
 
-    Uses Alpaca's holdings and cash balance (actual paper-account state) so that
-    R5 concentration checks and R6 cash checks reflect what Alpaca actually holds,
-    not the Fidelity baseline. Doctrine fields (position_caps, entry_types, tax-loss
-    rules) are always taken from the Fidelity portfolio so they stay consistent.
+    Loads alpaca_portfolio.json directly — the Alpaca account owns its own
+    doctrine (position_caps, entry_types, watch_list, targets). Holdings and
+    cash reflect actual Alpaca paper-account state so R5/R6 checks are accurate.
 
-    Falls back to fidelity_portfolio if the Alpaca file does not exist or cannot be
-    parsed — this keeps compliance running rather than silently skipping it.
+    Falls back to fidelity_portfolio if the file is missing or unparseable.
     """
     if not alpaca_portfolio_path.exists():
         return fidelity_portfolio
     try:
-        from portfolio_lib.loader import load_portfolio, Portfolio
-        alpaca = load_portfolio(alpaca_portfolio_path)
-        return Portfolio(
-            holdings=alpaca.holdings,
-            watch_list=alpaca.watch_list,
-            targets=alpaca.targets if alpaca.targets else fidelity_portfolio.targets,
-            strategy=alpaca.strategy,
-            cash_balance=alpaca.cash_balance,
-            open_orders=alpaca.open_orders,
-            position_caps=fidelity_portfolio.position_caps,
-            entry_types=fidelity_portfolio.entry_types,
-        )
+        from portfolio_lib.loader import load_portfolio
+        return load_portfolio(alpaca_portfolio_path)
     except Exception as exc:
         logger.warning(
             "Could not load Alpaca portfolio for compliance (%s) — using Fidelity portfolio",

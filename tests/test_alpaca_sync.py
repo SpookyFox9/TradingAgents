@@ -259,12 +259,12 @@ def _mock_alpaca_client(positions: list[tuple], cash: str = "1554.67") -> MagicM
     return client
 
 
-def test_reconcile_writes_live_positions(fidelity_json, alpaca_json):
+def test_reconcile_writes_live_positions(alpaca_json):
     """Live NVDA position replaces whatever was in alpaca_portfolio.json."""
     mock_client = _mock_alpaca_client([("NVDA", 2.5, 220.0)], cash="828.00")
 
     with patch("portfolio_lib.alpaca_sync._alpaca_paper_client", return_value=mock_client):
-        reconcile_with_alpaca(alpaca_json, fidelity_json)
+        reconcile_with_alpaca(alpaca_json)
 
     data = json.loads(alpaca_json.read_text())
     nvda = next(h for h in data["holdings"] if h["ticker"] == "NVDA")
@@ -275,28 +275,45 @@ def test_reconcile_writes_live_positions(fidelity_json, alpaca_json):
     assert "_reconciled_at" in data
 
 
-def test_reconcile_preserves_compliance_only_holdings(fidelity_json, alpaca_json):
-    """GME (tax-loss) and GMEWS (warrant) are not in Alpaca but must stay in the file."""
-    # Alpaca only holds NVDA
+def test_reconcile_only_live_positions_in_holdings(alpaca_json):
+    """Holdings must contain only live Alpaca positions — no Fidelity-only injection."""
     mock_client = _mock_alpaca_client([("NVDA", 3.0, 222.72)])
 
     with patch("portfolio_lib.alpaca_sync._alpaca_paper_client", return_value=mock_client):
-        reconcile_with_alpaca(alpaca_json, fidelity_json)
+        reconcile_with_alpaca(alpaca_json)
 
     data = json.loads(alpaca_json.read_text())
     tickers = {h["ticker"] for h in data["holdings"]}
-    assert "GME" in tickers     # needed for R2
-    assert "GMEWS" in tickers   # needed for R3
-    assert "NVDA" in tickers
+    assert tickers == {"NVDA"}
 
 
-def test_reconcile_preserves_doctrine_fields(fidelity_json, alpaca_json):
-    """wash_sale_lockout_until and role must be copied from Fidelity onto live positions."""
-    # Pretend the bot bought GME on Alpaca (unusual, but tests the doctrine copy path)
-    mock_client = _mock_alpaca_client([("GME", 5.0, 22.0)])
+def test_reconcile_empty_positions_yields_empty_holdings(alpaca_json):
+    """When Alpaca holds nothing, holdings should be empty — no Fidelity bleeding in."""
+    mock_client = _mock_alpaca_client([])
 
     with patch("portfolio_lib.alpaca_sync._alpaca_paper_client", return_value=mock_client):
-        reconcile_with_alpaca(alpaca_json, fidelity_json)
+        reconcile_with_alpaca(alpaca_json)
+
+    data = json.loads(alpaca_json.read_text())
+    assert data["holdings"] == []
+
+
+def test_reconcile_preserves_holding_level_doctrine(alpaca_json):
+    """role and wash_sale_lockout_until are preserved from the existing Alpaca file."""
+    # Pre-populate alpaca_portfolio.json with a GME holding that carries doctrine fields.
+    alpaca_json.write_text(json.dumps({
+        "holdings": [
+            {"ticker": "GME", "entry": 42.42, "shares": 26.0,
+             "role": "tax-loss-harvest", "wash_sale_lockout_until": "2026-06-19"},
+        ],
+        "watch_list": [], "targets": {}, "strategy": "test", "cash_balance": 100.0,
+    }), encoding="utf-8")
+
+    # Alpaca live API also returns GME (the bot holds it)
+    mock_client = _mock_alpaca_client([("GME", 26.0, 42.42)])
+
+    with patch("portfolio_lib.alpaca_sync._alpaca_paper_client", return_value=mock_client):
+        reconcile_with_alpaca(alpaca_json)
 
     data = json.loads(alpaca_json.read_text())
     gme = next(h for h in data["holdings"] if h["ticker"] == "GME")
@@ -304,46 +321,38 @@ def test_reconcile_preserves_doctrine_fields(fidelity_json, alpaca_json):
     assert gme.get("wash_sale_lockout_until") == "2026-06-19"
 
 
-def test_reconcile_inherits_fidelity_doctrine_fields(fidelity_json, alpaca_json):
-    """position_caps, entry_types, targets, and watch_list must come from Fidelity."""
-    fidelity_raw = json.loads(fidelity_json.read_text())
-    fidelity_raw["position_caps"] = {"NVDA": 3}
-    fidelity_raw["entry_types"] = {"AVGO": "breakout"}
-    fidelity_json.write_text(json.dumps(fidelity_raw), encoding="utf-8")
+def test_reconcile_preserves_own_doctrine_fields(alpaca_json):
+    """position_caps, entry_types, targets, and watch_list are preserved from alpaca_portfolio.json."""
+    alpaca_json.write_text(json.dumps({
+        "holdings": [],
+        "watch_list": ["KLAC"],
+        "targets": {"KLAC": 250.0},
+        "entry_types": {"KLAC": "pullback"},
+        "position_caps": {"PLTR": 16, "KLAC": 2},
+        "strategy": "test",
+        "cash_balance": 5000.0,
+    }), encoding="utf-8")
 
-    mock_client = _mock_alpaca_client([("NVDA", 3.0, 222.72)])
-
-    with patch("portfolio_lib.alpaca_sync._alpaca_paper_client", return_value=mock_client):
-        reconcile_with_alpaca(alpaca_json, fidelity_json)
-
-    data = json.loads(alpaca_json.read_text())
-    assert data.get("position_caps", {}).get("NVDA") == 3
-    assert data.get("entry_types", {}).get("AVGO") == "breakout"
-    assert "ANET" in data.get("watch_list", [])
-
-
-def test_reconcile_empty_positions_keeps_compliance_holdings(fidelity_json, alpaca_json):
-    """When Alpaca holds nothing, all Fidelity compliance holdings are preserved."""
-    mock_client = _mock_alpaca_client([])
+    mock_client = _mock_alpaca_client([("PLTR", 16.0, 130.45)])
 
     with patch("portfolio_lib.alpaca_sync._alpaca_paper_client", return_value=mock_client):
-        reconcile_with_alpaca(alpaca_json, fidelity_json)
+        reconcile_with_alpaca(alpaca_json)
 
     data = json.loads(alpaca_json.read_text())
-    tickers = {h["ticker"] for h in data["holdings"]}
-    assert "GME" in tickers
-    assert "GMEWS" in tickers
-    assert "NVDA" in tickers  # also preserved since not in live positions
+    assert data.get("position_caps") == {"PLTR": 16, "KLAC": 2}
+    assert data.get("entry_types") == {"KLAC": "pullback"}
+    assert data.get("watch_list") == ["KLAC"]
+    assert data.get("targets") == {"KLAC": 250.0}
 
 
-def test_reconcile_raises_when_keys_missing(fidelity_json, alpaca_json):
+def test_reconcile_raises_when_keys_missing(alpaca_json):
     """RuntimeError from _alpaca_paper_client propagates so the caller can catch it."""
     with patch(
         "portfolio_lib.alpaca_sync._alpaca_paper_client",
         side_effect=RuntimeError("no keys"),
     ):
         with pytest.raises(RuntimeError, match="no keys"):
-            reconcile_with_alpaca(alpaca_json, fidelity_json)
+            reconcile_with_alpaca(alpaca_json)
 
     assert not alpaca_json.exists()  # file not written on failure
 
