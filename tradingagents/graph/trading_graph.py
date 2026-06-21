@@ -198,7 +198,7 @@ class TradingAgentsGraph:
         }
 
     def _fetch_returns(
-        self, ticker: str, trade_date: str, holding_days: int = 5
+        self, ticker: str, trade_date: str, holding_days: int = 5, benchmark: str = "SPY"
     ) -> Tuple[Optional[float], Optional[float], Optional[int]]:
         """Fetch raw and alpha return for ticker over holding_days from trade_date.
 
@@ -216,21 +216,21 @@ class TradingAgentsGraph:
             # Normalize so the realized-return lookup hits the same instrument
             # the analysis priced (#984).
             stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
-            spy = yf.Ticker("SPY").history(start=trade_date, end=end_str)
+            bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
 
-            if len(stock) < 2 or len(spy) < 2:
+            if len(stock) < 2 or len(bench) < 2:
                 return None, None, None
 
-            actual_days = min(holding_days, len(stock) - 1, len(spy) - 1)
+            actual_days = min(holding_days, len(stock) - 1, len(bench) - 1)
             raw = float(
                 (stock["Close"].iloc[actual_days] - stock["Close"].iloc[0])
                 / stock["Close"].iloc[0]
             )
-            spy_ret = float(
-                (spy["Close"].iloc[actual_days] - spy["Close"].iloc[0])
-                / spy["Close"].iloc[0]
+            bench_ret = float(
+                (bench["Close"].iloc[actual_days] - bench["Close"].iloc[0])
+                / bench["Close"].iloc[0]
             )
-            alpha = raw - spy_ret
+            alpha = raw - bench_ret
             return raw, alpha, actual_days
         except Exception as e:
             logger.warning(
